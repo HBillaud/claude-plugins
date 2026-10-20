@@ -1,0 +1,16 @@
+{
+  "name": "session-band",
+  "version": "0.1.0",
+  "description": "One band above the prompt: what the session works on, where, how much of the session limit is used, and a replay of the last turn's edits",
+  "author": { "name": "Hadrien" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "taskLabel": {
+      "type": "string",
+      "title": "Task label",
+      "description": "model: Claude Haiku sums up your latest message (one small model call per prompt, counted in your usage). local: the label is read from the message itself, with no model call. off: no task row.",
+      "default": "model",
+      "options": ["model", "local", "off"]
+    }
+  }
+}

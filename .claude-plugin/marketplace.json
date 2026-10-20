@@ -1,0 +1,23 @@
+{
+  "name": "hadrien-labs",
+  "owner": { "name": "Hadrien" },
+  "metadata": {
+    "description": "Hadrien Labs: skills and mods for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "session-band",
+      "source": "./plugins/session-band",
+      "description": "One band above the prompt: what the session works on, where, how much of the session limit is used, and a replay of the last turn's edits",
+      "category": "mod",
+      "keywords": ["band", "usage", "replay", "ui"]
+    },
+    {
+      "name": "worktrees",
+      "source": "./plugins/worktrees",
+      "description": "Plant an isolated git worktree for a task, and safely prune the ones you no longer need",
+      "category": "skill",
+      "keywords": ["git", "worktree"]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "worktrees",
+  "version": "0.1.0",
+  "description": "Plant an isolated git worktree for a task, and safely prune the ones you no longer need",
+  "author": { "name": "Hadrien" }
+}
