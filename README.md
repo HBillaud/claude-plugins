@@ -7,7 +7,7 @@ Skills and mods for Claude Code, published as one marketplace: `hadrien-labs`.
 At the prompt of a Claude Code terminal session, add the marketplace once:
 
 ```
-/plugin marketplace add HBillaud/hadrien-labs
+/plugin marketplace add HBillaud/claude-plugins
 ```
 
 Then install what you want from it:
@@ -18,9 +18,9 @@ Then install what you want from it:
 /plugin install web-agency@hadrien-labs
 ```
 
-From a shell, the same works as `claude plugin install session-band --marketplace HBillaud/hadrien-labs`.
+From a shell, the same works as `claude plugin install session-band --marketplace HBillaud/claude-plugins`.
 
-In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `HBillaud/hadrien-labs`, then **Add plugin**.
+In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `HBillaud/claude-plugins`, then **Add plugin**.
 
 To pick up new versions: `/plugin marketplace update hadrien-labs`.
 

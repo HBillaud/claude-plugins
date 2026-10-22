@@ -60,17 +60,17 @@ You pick it when you install, and can change it any time in `/config`, where it'
 session-band is part of the **hadrien-labs** marketplace. At the prompt of a Claude Code terminal session:
 
 ```
-/plugin marketplace add HBillaud/hadrien-labs
+/plugin marketplace add HBillaud/claude-plugins
 /plugin install session-band@hadrien-labs
 ```
 
 From a shell:
 
 ```bash
-claude plugin install session-band --marketplace HBillaud/hadrien-labs
+claude plugin install session-band --marketplace HBillaud/claude-plugins
 ```
 
-In the desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `HBillaud/hadrien-labs`, then **Add plugin**.
+In the desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `HBillaud/claude-plugins`, then **Add plugin**.
 
 The band appears in your current session right away. No restart needed.
 
