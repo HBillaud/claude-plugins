@@ -25,6 +25,13 @@
       "description": "Web agency workflows for client sites and web apps: DNS and email deliverability audits, launch checks, and domain verification",
       "category": "skill",
       "keywords": ["dns", "email", "deliverability", "dmarc", "dkim", "spf", "vercel", "web-agency"]
+    },
+    {
+      "name": "agent-config",
+      "source": "./plugins/agent-config",
+      "description": "Refactor a repository's coding-agent configuration into one canonical source with thin per-agent adapters, measured and held by a CI guard",
+      "category": "skill",
+      "keywords": ["agents-md", "claude-md", "skills", "codex", "refactor"]
     }
   ]
 }

@@ -1,0 +1,15 @@
+schema_version: "1.1"
+name: messy-repo-to-canonical
+expected_outcome: |
+  On a new branch of ./orbit, in several commits with the guard's first, the agent config is canonical:
+  one real .agents/skills directory with .claude/skills a relative symlink to it; AGENTS.md as the
+  instructions, keeping every rule that existed in one copy only (the dist/ rule from .cursorrules, the
+  db/migrations rule from GEMINI.md, VITE_API_URL from web/CLAUDE.md); every CLAUDE.md a relative symlink
+  to the AGENTS.md beside it or a stub importing it; .cursorrules and GEMINI.md gone; the nested docs skills
+  lifted to the root's first level; the web testing skill hoisted under a namespaced name with paths:; the
+  reviewer subagent preloading a skill that holds its checklist; the deny list and TEST_WORKERS stated in
+  AGENTS.md; .claude/settings.local.json no longer tracked; the copied guard passing in enforce mode.
+  PR.md reports the pnpm/npm conflict and its resolution, the decisions, drift, discoveries and how to revert.
+runs: 1
+context:
+  scaffold_script: place-files.sh

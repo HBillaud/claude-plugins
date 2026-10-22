@@ -1,0 +1,6 @@
+{
+  "name": "agent-config",
+  "version": "0.1.0",
+  "description": "Refactor a repository's coding-agent configuration into one canonical source with thin per-agent adapters, measured and held by a CI guard",
+  "author": { "name": "Hadrien" }
+}
