@@ -18,6 +18,13 @@
       "description": "Plant an isolated git worktree for a task, and safely prune the ones you no longer need",
       "category": "skill",
       "keywords": ["git", "worktree"]
+    },
+    {
+      "name": "web-agency",
+      "source": "./plugins/web-agency",
+      "description": "Web agency workflows for client sites and web apps: DNS and email deliverability audits, launch checks, and domain verification",
+      "category": "skill",
+      "keywords": ["dns", "email", "deliverability", "dmarc", "dkim", "spf", "vercel", "web-agency"]
     }
   ]
 }
