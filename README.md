@@ -15,6 +15,7 @@ Then install what you want from it:
 ```
 /plugin install session-band@hadrien-labs
 /plugin install worktrees@hadrien-labs
+/plugin install web-agency@hadrien-labs
 ```
 
 From a shell, the same works as `claude plugin install session-band --marketplace HBillaud/hadrien-labs`.
@@ -29,6 +30,7 @@ To pick up new versions: `/plugin marketplace update hadrien-labs`.
 | --- | --- | --- |
 | [session-band](plugins/session-band) | mod | One band above the prompt: what the session works on, where, how much of the session limit is used, and a replay of the last turn's edits. Adds `/worktree` and `/replay`. The task label can use Claude Haiku, local parsing with no model call, or be turned off. |
 | [worktrees](plugins/worktrees) | skills | `/worktrees:plant-tree` gives a task its own git worktree under `.claude/worktrees/`; `/worktrees:prune-trees` safely deletes the ones you no longer need. |
+| [web-agency](plugins/web-agency) | skills | `/web-agency:audit-dns` audits live DNS records, registrar/host dashboard screenshots, and project codebases for routing issues, split-DNS traps, email deliverability (`MX`, `SPF`, `DKIM`, `DMARC`), and transactional mailers. |
 
 ## Developing
 

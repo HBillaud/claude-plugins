@@ -1,0 +1,6 @@
+{
+  "name": "web-agency",
+  "version": "0.1.0",
+  "description": "Web agency workflows for client sites and web apps: DNS and email deliverability audits, launch checks, and domain verification",
+  "author": { "name": "Hadrien" }
+}
