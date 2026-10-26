@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: hero-media-prep
+expected_outcome: |
+  The agent probes lumpia/incoming/raw-hero.mov (2560x1440, audio track) and transcodes it into
+  H.264 MP4 and VP9 WebM renditions at one or two widths no larger than the source, without audio,
+  each far smaller than the source, plus a WebP poster. It rewires the hero poster-first: an <img>
+  with fetchpriority="high" as the LCP element, no video source in the HTML, the sources added after
+  the load event, and no video at all under prefers-reduced-motion or Save-Data. It converts
+  new-portrait.jpg to WebP (and AVIF if possible) with srcset and sizes, warns that 700px is under
+  twice the 560px slot, and keeps images/portrait.jpg. The work is committed on a branch.
+runs: 1
+context:
+  scaffold_script: place-files.sh

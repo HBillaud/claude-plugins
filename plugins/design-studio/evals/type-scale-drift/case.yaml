@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: type-scale-drift
+expected_outcome: |
+  The agent measures /, /guide/ and /why-florida/ in ./coastline at a desktop and a mobile width,
+  reports a role-by-route table against the home page with deltas (hero h1 48 and 52 vs 56px,
+  the weight 600 on /why-florida/, eyebrow tracking 0.14em on /guide/ and 13px on /why-florida/,
+  the 17px/1.7 lede on /guide/, the 32px section title on /why-florida/), then aligns both inner
+  pages to the home page through shared rules in styles.css, deleting the per-page overrides, on a
+  branch. A second measurement shows every role matching the home page at both widths.
+runs: 1
+context:
+  scaffold_script: place-files.sh
