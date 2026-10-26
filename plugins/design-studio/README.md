@@ -37,7 +37,7 @@ Four skills for the design half of client work: redesigning a section from mocku
 
 The scripts need Node 18 or later; the runner also needs the `playwright` package and its Chromium (check-responsive's SKILL.md says how to get them without touching the project), and `transcode.sh` needs ffmpeg plus a WebP encoder (`brew install ffmpeg webp`: Homebrew's ffmpeg has no libwebp, so the script falls back to `cwebp`). Every script also works without the runner, through the browser pane.
 
-To re-run the cases after changing a skill, from this directory:
+To re-run the cases after changing a skill, from this directory. The agent runs in a sandbox that can neither install Playwright nor read yours, so each case's scaffold copies it in from `npm root -g` or `~/.cache/design-studio/playwright` (`npm i --prefix ~/.cache/design-studio/playwright playwright@1.63.0 && npx --prefix ~/.cache/design-studio/playwright playwright install chromium`); without it the agent works without a browser. `hero-media-prep` also needs ffmpeg.
 
 ```bash
 claude plugin eval . --scaffold --ablation none --allow-tools Bash Write Edit
