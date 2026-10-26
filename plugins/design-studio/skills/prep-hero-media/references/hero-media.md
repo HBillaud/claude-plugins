@@ -18,8 +18,8 @@
 | `-movflags +faststart` | always | moves the index to the front, so playback starts before the file finishes downloading |
 | `-an` | always | a muted background never plays audio; the track only costs bytes |
 | CRF | 26 (H.264), 34 (VP9) | visually clean for slow, soft footage; raise by 2 for busy footage that is still too big |
-| `-maxrate` / `-bufsize` | 2500k / 5000k | caps the peaks, so a busy second does not stall a slow connection |
-| VP9 WebM | constrained quality (`-crf` with `-b:v` as the ceiling) | 20 to 40% smaller than H.264 in Chrome and Firefox; listed first, the MP4 is the fallback |
+| `-maxrate` / `-bufsize` | 2500k / 5000k at 1920 wide, scaled by pixel area below (1110k at 1280) | caps the peaks, so a busy second does not stall a slow connection; scaled, so the small rendition is actually smaller |
+| VP9 WebM | constrained quality (`-crf` with `-b:v` as the ceiling) | often smaller than H.264 on quiet footage, but on busy clips held at the ceiling it came out larger (Miami Square Capital's skyline, the eval's test pattern): the script flags it, and then the MP4 ships alone. When smaller, it is listed first and the MP4 is the fallback |
 | Frame rate | 30 (24 for film-like footage) | 60 fps doubles the size for motion a background does not need |
 | Poster | WebP quality 80, cut from the 1920 rendition | matches the loop's first frames exactly, so the fade-in does not jump |
 | AV1 video | not by default | encoding is slow and older iPhones cannot decode it in hardware; add it only for a very long or very large loop |

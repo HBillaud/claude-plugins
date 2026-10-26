@@ -28,7 +28,7 @@ bash <skill-dir>/scripts/transcode.sh video <file> public/media --name hero --wi
 - **Widths**: 1920 and 1280 for a full-bleed hero; one width (1280) for a contained one. The script never upscales.
 - **Length**: background loops read best at 8 to 15 s. Trim with `--start` and `--duration` to a stretch that loops without a visible jump, and check the cut by watching the first and last second.
 - **Poster frame**: pick a calm, representative frame (`--poster-at` in seconds); it is what most visitors see first and what reduced-motion visitors see only. Look at it before wiring it in.
-- **Budget**: aim for under 2.5 MB per rendition at 1920, under 1 MB at 1280, and under 150 KB for the poster. Raise `--crf` by 2 at a time to go lower. If a WebM comes out larger than its MP4, ship the MP4 alone at that width.
+- **Budget**: aim for under 2.5 MB per rendition at 1920, under 1 MB at 1280, and under 150 KB for the poster; the script flags what is over. `--maxrate` is the ceiling at 1920 and scales down with each smaller width. A busy clip (a city skyline, water) sits at that ceiling, where raising `--crf` changes little: lower `--maxrate` instead (2000k took Miami Square Capital's 18.5 MB loop to 2.0 MB and 932 KB). For a quiet clip, raise `--crf` by 2 at a time. A poster over budget wants a calmer frame or a lower `--quality`. If a WebM comes out larger than its MP4, ship the MP4 alone at that width.
 - Audio is always stripped: a muted autoplay background never plays it, and it costs bytes.
 
 **Image**:

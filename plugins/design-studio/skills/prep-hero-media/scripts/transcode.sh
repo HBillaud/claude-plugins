@@ -2,13 +2,15 @@
 # Prepare hero media for the web with ffmpeg. Bash 3.2 compatible (stock macOS).
 #
 #   transcode.sh video <input> <out-dir> [--name hero] [--widths 1920,1280] [--poster-at 1.0]
-#                [--crf 26] [--maxrate 2500k] [--start 0] [--duration <s>] [--fps 30]
+#                [--crf 26] [--maxrate 2500k] [--start 0] [--duration <s>] [--fps 30] [--quality 78]
 #   transcode.sh image <input> <out-dir> [--name portrait] [--widths 640,1280,1920] [--quality 78]
 #   transcode.sh probe <input>
 #
 # video: per width, <name>-<w>.mp4 (H.264 High, yuv420p, faststart) and <name>-<w>.webm (VP9),
 #        both without audio and with a capped bitrate, plus <name>-poster.webp and <name>-poster.jpg
 #        cut at --poster-at seconds from the largest width. Widths above the source are skipped.
+#        --maxrate is the ceiling at 1920 wide; other widths get it scaled by pixel area (1280: 44%),
+#        or every rendition of a busy clip would hit the same ceiling and weigh the same.
 # image: per width, <name>-<w>.webp and <name>-<w>.avif (when ffmpeg has an AV1 encoder), never
 #        upscaled; warns when the source is under twice the largest width.
 # probe: prints width, height, duration, codecs, audio presence and size.
@@ -113,22 +115,25 @@ pick_widths() {
 if [ "$mode" = "video" ]; then
   name="${name:-hero}"
   ws=$(pick_widths "${widths:-1920,1280}")
-  bufsize="$(( ${maxrate%k} * 2 ))k"
   trim=""
   [ "$start" != "0" ] && trim="-ss $start"
   [ -n "$duration" ] && trim="$trim -t $duration"
   for w in $ws; do
+    rate=$(( ${maxrate%k} * w * w / (1920 * 1920) ))
+    [ "$rate" -ge 400 ] || rate=400
+    bufsize="$(( rate * 2 ))k"
+    rate="${rate}k"
     vf="scale=${w}:-2:flags=lanczos,fps=${fps},format=yuv420p"
     # shellcheck disable=SC2086
     ffmpeg -hide_banner -loglevel error -y $trim -i "$in" -an -vf "$vf" \
-      -c:v libx264 -profile:v high -preset slow -crf "$crf" -maxrate "$maxrate" -bufsize "$bufsize" \
+      -c:v libx264 -profile:v high -preset slow -crf "$crf" -maxrate "$rate" -bufsize "$bufsize" \
       -movflags +faststart "$out/$name-$w.mp4"
     made="$made $out/$name-$w.mp4"
     if has_encoder libvpx-vp9; then
       # Constrained quality: with -crf, libvpx treats -b:v as the bitrate ceiling.
       # shellcheck disable=SC2086
       ffmpeg -hide_banner -loglevel error -y $trim -i "$in" -an -vf "$vf" \
-        -c:v libvpx-vp9 -crf $((crf + 8)) -b:v "$maxrate" -row-mt 1 -deadline good -cpu-used 2 \
+        -c:v libvpx-vp9 -crf $((crf + 8)) -b:v "$rate" -row-mt 1 -deadline good -cpu-used 2 \
         "$out/$name-$w.webm"
       made="$made $out/$name-$w.webm"
     else
@@ -138,7 +143,7 @@ if [ "$mode" = "video" ]; then
   top=$(echo $ws | awk '{print $1}')
   # The poster comes from the first rendition so it matches the loop's first frames exactly.
   if [ -n "$webp_tool" ]; then
-    webp "$out/$name-poster.webp" 80 -ss "$poster_at" -i "$out/$name-$top.mp4"
+    webp "$out/$name-poster.webp" "$quality" -ss "$poster_at" -i "$out/$name-$top.mp4"
     made="$made $out/$name-poster.webp"
   else
     echo "$no_webp; the JPEG poster alone is written" >&2
@@ -184,6 +189,20 @@ echo "| --- | --- | ---: |"
 echo "| $(basename "$in") (source) | ${src_w}x${src_h} | $(human "$in_size") |"
 for f in $made; do
   echo "| $(basename "$f") | $(dims "$f") | $(human "$(size_of "$f")") |"
+done
+# Budgets, with 5% slack: 2.5 MB per rendition at 1920 wide, scaled by area (about 1 MB at 1280), and
+# 150 KB for the poster visitors load (the WebP; the JPEG only when there is no WebP).
+for f in $made; do
+  kb=$(( $(size_of "$f") / 1024 ))
+  case "$f" in
+    *-poster.webp) limit=150; fix="pick a calmer frame with --poster-at, or lower --quality" ;;
+    *-poster.jpg) case "$made" in *-poster.webp*) continue ;; esac; limit=150; fix="pick a calmer frame with --poster-at, or lower --quality" ;;
+    *.mp4 | *.webm) w=$(dims "$f"); w=${w%x*}; limit=$(( 2560 * w * w / (1920 * 1920) )); fix="lower --maxrate (a busy clip sits at the ceiling, where --crf changes little), raise --crf by 2, or trim with --duration" ;;
+    *) continue ;;
+  esac
+  if [ "$kb" -gt $(( limit * 105 / 100 )) ]; then
+    echo "over budget: $(basename "$f") is $(human "$(size_of "$f")") for a budget of $(human $(( limit * 1024 ))): $fix"
+  fi
 done
 for f in $made; do
   case "$f" in *.webm) ;; *) continue ;; esac
