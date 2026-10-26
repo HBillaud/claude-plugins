@@ -28,7 +28,8 @@ Bugs sit one pixel below a breakpoint, where the narrow layout gets the wide lay
 - **Real device chrome:** the iOS Safari toolbar shrinks `100vh`; use `100svh`/`100dvh` and check on a phone for full-height heroes.
 - **Touch behaviour:** hover states that hide content (a menu that opens on hover only) pass every probe and fail on a phone. Look for `:hover`-only reveals in the section's CSS.
 - **Fonts loading late:** the probes wait for `load`; a font swap after that can reflow text. The runner waits for network idle as well.
-- **Reduced motion in the browser pane:** page JavaScript cannot change media features. Use the runner, DevTools Rendering, or the OS setting.
+- **Reduced motion in the browser pane:** neither page JavaScript nor the pane's `resize_window` can change it (`resize_window` sets `colorScheme` only). Use the runner, DevTools Rendering, or the OS setting.
+- **A hidden browser pane** renders no frames: reveals never fire there. Show it before probing; the probes return a `warning` when it is not rendering.
 - **Class-based dark mode** (`next-themes`, `.dark`, `data-theme`): `prefers-color-scheme` emulation changes nothing until the class flips; set it by hand.
 
 ## Tap targets

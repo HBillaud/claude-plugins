@@ -42,6 +42,7 @@ function delta(ref, s) {
 
 const out = [];
 let mismatches = 0;
+let missing = 0;
 for (const width of widths) {
   const atWidth = rows.filter((r) => r.width === width && !r.result.error);
   const routes = [...new Set(atWidth.map((r) => r.route))].sort((a, b) => (a === reference ? -1 : b === reference ? 1 : a.localeCompare(b)));
@@ -75,16 +76,21 @@ for (const width of widths) {
     for (const [route, d] of divs) for (const x of d.slice(0, 4)) out.push(`- ${route} · \`${x.selector}\` · ${x.height}px tall, ${x.width}px wide, border ${x.borderTop}, margins ${x.marginBlock}`);
   }
   if (drift.length) out.push("", "More than one style for a role on the same route:", ...drift);
-  out.push("", "Where each mismatched style comes from (and the reference it should match):");
+  // A role the reference has and a route lacks: absent there, or missed by the classification (pass overrides).
+  const absent = roles.flatMap((role) => (byRoute[reference].roles[role] ? routes.filter((route) => !byRoute[route].roles[role]).map((route) => `- ${role} · ${route}`) : []));
+  missing += absent.length;
+  if (absent.length) out.push("", "Roles the reference has that a route lacks (absent, or not recognised: check, and pass roles overrides if needed):", ...absent);
+  const sources = [];
   for (const role of roles) {
     const ref = byRoute[reference].roles[role]?.[0];
     const off = routes.filter((route) => route !== reference && byRoute[route].roles[role] && delta(ref, byRoute[route].roles[role][0]).includes("❌"));
     if (!off.length) continue;
     for (const route of [reference, ...off]) {
       const s = byRoute[route].roles[role]?.[0];
-      if (s) out.push(`- ${role} · ${route} · \`${s.examples[0].selector}\`${s.examples[0].classes ? ` · class="${s.examples[0].classes}"` : ""} · "${s.examples[0].text}"`);
+      if (s) sources.push(`- ${role} · ${route} · \`${s.examples[0].selector}\`${s.examples[0].classes ? ` · class="${s.examples[0].classes}"` : ""} · "${s.examples[0].text}"`);
     }
   }
+  if (sources.length) out.push("", "Where each mismatched style comes from (and the reference it should match):", ...sources);
 }
-out.push(`\n${mismatches ? `${mismatches} cell(s) differ from the reference.` : "Every route matches the reference."}`);
+out.push(`\n${mismatches ? `${mismatches} cell(s) differ from the reference.` : "Every measured cell matches the reference."}${missing ? ` ${missing} role(s) not found on a route.` : ""}`);
 console.log(out.join("\n"));

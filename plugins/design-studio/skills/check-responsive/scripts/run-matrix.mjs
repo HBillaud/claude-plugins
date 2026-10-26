@@ -204,6 +204,7 @@ function table(results, baseline) {
           details.push(`- ${r.width}px ${r.scheme}${r.reduced === "on" ? " reduced" : ""} · ${k}${fresh} · \`${item.selector}\` · ${extra}${item.text ? ` · "${item.text}"` : ""}`);
         }
       }
+      if (x.warning) details.push(`- ${r.width}px · warning · ${x.warning}`);
       for (const e of x.consoleErrors) details.push(`- ${r.width}px · console · ${e}`);
       for (const o of x.overlays) details.push(`- ${r.width}px · overlay · ${o}`);
     }

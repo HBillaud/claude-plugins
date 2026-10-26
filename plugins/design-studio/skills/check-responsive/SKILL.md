@@ -35,12 +35,13 @@ For a static site, `--serve ./site` replaces `--base`. Defaults: widths `375,390
 
 When the user works in the desktop app's browser pane, or the page needs a logged-in session:
 
-1. Navigate to the route. For each width in the matrix, `resize_window` to it (height 812 under 768px wide, else 900).
-2. Read `<skill-dir>/scripts/probes.js` and pass its whole text to the JavaScript tool. To scope it, run `globalThis.__DS_PROBE_OPTS = { scope: "#pillars" }` first. It scrolls the page through and back, then returns a JSON string. If the tool hands back a pending promise or nothing, call it again with `globalThis.__DS_PROBE_RESULT`.
-3. Read the console (`read_console_messages`, errors only) for hydration and runtime errors after each load.
-4. Reduced motion cannot be emulated from page JavaScript. Use the runner for that half of the matrix, or ask the user to set it in DevTools (Rendering, "Emulate CSS media feature prefers-reduced-motion") or in the OS, then re-run the probe. Say which you did.
-5. For class-based dark mode, run `document.documentElement.classList.add("dark")` (or the site's attribute) and probe again.
-6. **Reset the viewport to desktop when you finish** (1440x900, or the size it had before). The pane keeps an emulated size, and the user's next look at the site would be at 375px.
+1. **Show the pane first.** A hidden pane runs the page as a background tab that renders no frames, so no scroll-triggered reveal can fire; the probes detect this, skip the hidden probe and return a `warning` saying so. If you cannot show it, use the runner for that half, or ask the user to bring the pane into view.
+2. Navigate to the route. For each width in the matrix, `resize_window` with `width` and `height` (812 under 768px wide, else 900). The pane follows the app's light or dark theme, so pass `colorScheme: "light"` (or `"dark"` for the dark half) on the same call.
+3. Read `<skill-dir>/scripts/probes.js` and pass its whole text to the JavaScript tool. To scope it, run `globalThis.__DS_PROBE_OPTS = { scope: "#pillars" }` first. The tool awaits the promise and returns the JSON string; it takes a few seconds, longer when reveals are re-checked. If a tool hands back a pending promise or nothing instead, read `globalThis.__DS_PROBE_RESULT` with a second call.
+4. Read the console (`read_console_messages` with `onlyErrors: true`) for hydration and runtime errors after each load.
+5. Reduced motion cannot be emulated in the pane. Use the runner for that half of the matrix, or ask the user to set it in DevTools (Rendering, "Emulate CSS media feature prefers-reduced-motion") or in the OS, then re-run the probe. Say which you did.
+6. For class-based dark mode, run `document.documentElement.classList.add("dark")` (or the site's attribute) and probe again.
+7. **Reset the viewport when you finish:** `resize_window` with `preset: "desktop"`, which clears the emulation. Setting 1440x900 instead would leave a fixed emulated size behind, and the pane keeps an emulated size across reloads.
 
 ## 3. Triage
 

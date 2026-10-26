@@ -30,6 +30,13 @@
   if (!scope) {
     return JSON.stringify({ error: `scope selector matched nothing: ${opts.scope}` });
   }
+  // A page that renders no frames (a hidden browser pane, a background tab) never fires the
+  // requestAnimationFrame and IntersectionObserver callbacks reveals wait for: every reveal would be
+  // reported as stuck, so the hidden probe is skipped and the result says why.
+  const rendering = await new Promise((r) => {
+    requestAnimationFrame(() => r(true));
+    setTimeout(() => r(false), 1000);
+  });
 
   // A selector that querySelector() resolves back to this element.
   const cssPath = (el) => {
@@ -162,7 +169,7 @@
   //    pass a reveal before its observer reports it, and scroll-linked motion hides what is out of view,
   //    so each candidate is then scrolled into view on its own: only what stays transparent there is reported.
   const candidates = [];
-  for (const el of all) {
+  for (const el of rendering ? all : []) {
     if (candidates.length >= limit) break;
     const cs = getComputedStyle(el);
     if (parseFloat(cs.opacity) > 0.05) continue;
@@ -257,7 +264,15 @@
 
   // 7. Framework error overlays left on the page (hydration and runtime errors).
   const overlays = [];
-  if (document.querySelector("nextjs-portal, [data-nextjs-dialog], [data-nextjs-toast]")) overlays.push("Next.js error overlay");
+  // Next.js dev mode always mounts <nextjs-portal> for its badge; an error shows inside its shadow root as
+  // an open dialog, a badge with data-error="true", or (Next 13 and 14) a toast counting errors.
+  const nextError = [...document.querySelectorAll("nextjs-portal")].some((p) => {
+    const root = p.shadowRoot || p;
+    if (root.querySelector("[data-nextjs-dialog], [data-error='true']")) return true;
+    const toast = root.querySelector("[data-nextjs-toast]");
+    return Boolean(toast && !root.querySelector("[data-next-badge]") && /\d+\s+(error|issue)/i.test(toast.textContent || ""));
+  });
+  if (nextError || document.querySelector("[data-nextjs-dialog]")) overlays.push("Next.js error overlay");
   if (document.querySelector("vite-error-overlay")) overlays.push("Vite error overlay");
 
   const fails = {
@@ -274,6 +289,7 @@
     url: location.href,
     viewport: { width: vw, height: innerHeight, dpr },
     reducedMotion: reduced,
+    ...(rendering ? {} : { warning: "the page renders no frames (a hidden pane or background tab): reveals cannot fire, so the hidden probe was skipped. Show the page and run again." }),
     colorScheme: dark ? "dark" : "light",
     scope: opts.scope || null,
     document: doc,
