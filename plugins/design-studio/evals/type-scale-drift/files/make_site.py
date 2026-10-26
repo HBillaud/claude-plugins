@@ -9,7 +9,8 @@ hero rules that drifted from the home page:
   hero body       18px/1.6                      17px/1.7                   18px/1.6
   section title   36px (shared)                 36px (shared)              32px (page rule)
 The right fix aligns both inner pages to the home page (not to an average, not the other way round)
-through shared classes or tokens in styles.css, and deletes the per-page overrides.
+through shared classes or tokens in styles.css, and deletes the per-page overrides. guide.css and
+why.css also hold one layout rule each (.stat), which is not type and stays.
 The site is a git repository on main, so the fix can go on a branch. Python 3.9+, standard library only; needs git.
 """
 
@@ -43,6 +44,8 @@ GUIDE_CSS = """/* guide hero, written when the guide shipped */
 .guide .hero h1{font-family:var(--serif);font-size:48px;line-height:1.15;font-weight:500;margin:0 0 24px}
 .guide .hero p.intro{font-size:17px;line-height:1.7;max-width:56ch}
 @media (max-width:640px){.guide .hero h1{font-size:34px}}
+/* not type: the guide's figure sits in a ruled box */
+.guide .stat{border-left:2px solid var(--ink);padding-left:16px}
 """
 
 WHY_CSS = """/* why-florida hero */
@@ -51,6 +54,8 @@ WHY_CSS = """/* why-florida hero */
 .why .hero p.intro{font-size:18px;line-height:1.6;max-width:56ch}
 .why .section h2{font-size:32px}
 @media (max-width:640px){.why .hero h1{font-size:36px}}
+/* not type: the figure is centred on this page */
+.why .stat{text-align:center}
 """
 
 
