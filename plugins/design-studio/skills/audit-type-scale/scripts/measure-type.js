@@ -78,14 +78,31 @@
     const t = text(el);
     return t.length > 0 && t.length <= 60 && !el.querySelector("h1, h2, h3, p + p");
   };
+  // The element that actually sets the text: a label wrapper (a flex row with a decorative rule and a
+  // span) inherits its own font size from the page, so descend to the child carrying all of its text.
+  const innermost = (el) => {
+    let n = el;
+    for (;;) {
+      const child = [...n.children].find((c) => visible(c) && text(c) === text(n));
+      if (!child) return n;
+      n = child;
+    }
+  };
+  // A short row of items (a rule, the label, a reading time) before a heading: its first piece of text is the label.
+  const firstLeaf = (el) => {
+    if (!el || !visible(el) || text(el).length > 120 || el.querySelector("h1, h2, h3, img, picture, svg, button, a")) return null;
+    const leaf = [...el.querySelectorAll("*")].find((n) => visible(n) && text(n) && ![...n.children].some((c) => text(c)));
+    return leaf || null;
+  };
   // The short element right before a heading: its previous sibling, or the last short child of the wrapper before it.
   const labelBefore = (h) => {
     let prev = h.previousElementSibling;
     while (prev && !visible(prev)) prev = prev.previousElementSibling;
-    if (prev && shortLabel(prev)) return prev;
+    if (prev && shortLabel(prev)) return innermost(prev);
+    if (prev && firstLeaf(prev)) return firstLeaf(prev);
     if (!prev && h.parentElement && h.parentElement !== root) {
       let up = h.parentElement.previousElementSibling;
-      if (up && shortLabel(up)) return up;
+      if (up && shortLabel(up)) return innermost(up);
     }
     return null;
   };
@@ -103,7 +120,7 @@
   for (const el of root.querySelectorAll("[class*='eyebrow' i], [class*='kicker' i], [class*='overline' i], [class*='pretitle' i]")) {
     if (!visible(el) || found.has(el)) continue;
     const next = el.nextElementSibling;
-    assign(el, h1 && (next === h1 || el.closest("header, section") === h1.closest("header, section")) ? "eyebrow" : "section-label");
+    assign(innermost(el), h1 && (next === h1 || el.closest("header, section") === h1.closest("header, section")) ? "eyebrow" : "section-label");
   }
   for (const h of root.querySelectorAll("h2")) {
     if (!visible(h)) continue;
@@ -123,10 +140,14 @@
     tally.set(k, (tally.get(k) || 0) + text(p).length);
   }
   const bodySize = parseFloat([...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "16");
+  // The lede is the first paragraph after the h1, also when it sits in a wrapper (div > p), before any h2.
   if (h1) {
-    let next = h1.nextElementSibling;
-    while (next && !visible(next)) next = next.nextElementSibling;
-    if (next && next.localName === "p" && text(next).length >= 20) assign(next, "lede");
+    for (let next = h1.nextElementSibling; next; next = next.nextElementSibling) {
+      if (!visible(next)) continue;
+      if (/^h[1-3]$/.test(next.localName) || next.querySelector("h2")) break;
+      const p = next.localName === "p" ? next : [...next.querySelectorAll("p")].find(visible);
+      if (p && text(p).length >= 20) { assign(p, "lede"); break; }
+    }
   }
   for (const p of paragraphs) assign(p, "body");
 

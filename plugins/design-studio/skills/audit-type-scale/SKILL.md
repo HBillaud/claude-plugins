@@ -39,7 +39,7 @@ For a static site, `--serve <folder>` replaces `--base` and needs no server. (Pl
 
 The table `type-table.mjs` prints, per width: one row per role, the reference column first, and each other cell's style with ✅ or ❌ and the deltas (`size -8px (0.86×), lh 1.15 vs 1.1`). Under it:
 
-- **More than one style for a role on the same route**: drift inside a page (two body sizes, a stray `h2` override), which is fixed before drift between pages.
+- **More than one style for a role on the same route**: drift inside a page (two body sizes, a stray `h2` override), which is fixed before drift between pages. When the reference is a landing page with many (eight body styles, five kinds of `h3` card titles), its dominant style is not a fair reference for an article page's running text: say so, compare the hero roles, and scope the rest (`--opts '{"scope":"#overview"}'`) or ask which component should set the body.
 - **Dividers**: thickness, width, color and margins per route, when the user asked about section dividers.
 - **Where each mismatched style comes from**: selectors and classes, which lead to the rules to change.
 
