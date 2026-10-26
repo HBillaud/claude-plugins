@@ -68,5 +68,5 @@ When the user wants a new loop generated from a reference clip (they used Omni 1
 
 | File | Use it when |
 | --- | --- |
-| `scripts/transcode.sh` | `probe`, `video` and `image` modes; bash 3.2 compatible, needs ffmpeg |
+| `scripts/transcode.sh` | `probe`, `video` and `image` modes; bash 3.2 compatible, needs ffmpeg, and `cwebp` when ffmpeg has no libwebp (`brew install ffmpeg webp`) |
 | [references/hero-media.md](references/hero-media.md) | wiring snippets for HTML, React and Next.js, encoding settings and why, budgets |

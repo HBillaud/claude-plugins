@@ -16,7 +16,7 @@
 set -euo pipefail
 
 die() { echo "transcode.sh: $*" >&2; exit 1; }
-command -v ffmpeg >/dev/null 2>&1 || die "ffmpeg not found (macOS: brew install ffmpeg)"
+command -v ffmpeg >/dev/null 2>&1 || die "ffmpeg not found (macOS: brew install ffmpeg webp)"
 command -v ffprobe >/dev/null 2>&1 || die "ffprobe not found (it ships with ffmpeg)"
 
 size_of() { wc -c <"$1" | tr -d ' '; }
@@ -29,6 +29,24 @@ encoders=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
 muxers=$(ffmpeg -hide_banner -muxers 2>/dev/null || true)
 has_encoder() { case "$encoders" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 has_muxer() { case "$muxers" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# WebP goes through ffmpeg's libwebp, or through cwebp when this ffmpeg lacks it: Homebrew's
+# ffmpeg formula does (ffmpeg-full has it; `brew install webp` provides cwebp).
+webp_tool=""
+if has_encoder libwebp; then webp_tool="ffmpeg"; elif command -v cwebp >/dev/null 2>&1; then webp_tool="cwebp"; fi
+# webp <out> <quality> <ffmpeg input and filter arguments...>: writes one frame as WebP.
+webp() {
+  local out="$1" q="$2"
+  shift 2
+  if [ "$webp_tool" = "ffmpeg" ]; then
+    ffmpeg -hide_banner -loglevel error -y "$@" -frames:v 1 -c:v libwebp -quality "$q" "$out"
+  else
+    ffmpeg -hide_banner -loglevel error -y "$@" -frames:v 1 "$out.png"
+    cwebp -quiet -q "$q" "$out.png" -o "$out"
+    rm -f "$out.png"
+  fi
+}
+no_webp="no WebP encoder: this ffmpeg has no libwebp (Homebrew's ffmpeg formula lacks it). brew install webp (for cwebp), or brew install ffmpeg-full"
 
 probe() {
   local in="$1"
@@ -119,10 +137,16 @@ if [ "$mode" = "video" ]; then
   done
   top=$(echo $ws | awk '{print $1}')
   # The poster comes from the first rendition so it matches the loop's first frames exactly.
-  ffmpeg -hide_banner -loglevel error -y -ss "$poster_at" -i "$out/$name-$top.mp4" -frames:v 1 -c:v libwebp -quality 80 "$out/$name-poster.webp"
+  if [ -n "$webp_tool" ]; then
+    webp "$out/$name-poster.webp" 80 -ss "$poster_at" -i "$out/$name-$top.mp4"
+    made="$made $out/$name-poster.webp"
+  else
+    echo "$no_webp; the JPEG poster alone is written" >&2
+  fi
   ffmpeg -hide_banner -loglevel error -y -ss "$poster_at" -i "$out/$name-$top.mp4" -frames:v 1 -q:v 4 "$out/$name-poster.jpg"
-  made="$made $out/$name-poster.webp $out/$name-poster.jpg"
+  made="$made $out/$name-poster.jpg"
 elif [ "$mode" = "image" ]; then
+  [ -n "$webp_tool" ] || die "$no_webp"
   name="${name:-$(basename "${in%.*}")}"
   ws=$(pick_widths "${widths:-640,1280,1920}")
   top=$(echo $ws | awk '{print $1}')
@@ -134,12 +158,18 @@ elif [ "$mode" = "image" ]; then
     if has_encoder libsvtav1; then avif="libsvtav1"; elif has_encoder libaom-av1; then avif="libaom-av1"; fi
   fi
   for w in $ws; do
-    ffmpeg -hide_banner -loglevel error -y -i "$in" -vf "scale=${w}:-2:flags=lanczos" -c:v libwebp -quality "$quality" "$out/$name-$w.webp"
+    webp "$out/$name-$w.webp" "$quality" -i "$in" -vf "scale=${w}:-2:flags=lanczos"
     made="$made $out/$name-$w.webp"
     if [ -n "$avif" ]; then
       # AV1 needs even dimensions and a 4:2:0 layout; crf 30 is close to WebP quality 78.
-      ffmpeg -hide_banner -loglevel error -y -i "$in" -vf "scale=${w}:-2:flags=lanczos,format=yuv420p" -c:v "$avif" -crf 30 -still-picture 1 "$out/$name-$w.avif" 2>/dev/null \
-        || ffmpeg -hide_banner -loglevel error -y -i "$in" -vf "scale=${w}:-2:flags=lanczos,format=yuv420p" -c:v "$avif" -crf 30 "$out/$name-$w.avif"
+      # -still-picture is a libaom-av1 option (older builds lack it: retry without); SVT_LOG=1 keeps
+      # SVT-AV1's banner off stderr.
+      if [ "$avif" = "libaom-av1" ]; then
+        ffmpeg -hide_banner -loglevel error -y -i "$in" -vf "scale=${w}:-2:flags=lanczos,format=yuv420p" -c:v "$avif" -crf 30 -still-picture 1 "$out/$name-$w.avif" 2>/dev/null \
+          || ffmpeg -hide_banner -loglevel error -y -i "$in" -vf "scale=${w}:-2:flags=lanczos,format=yuv420p" -c:v "$avif" -crf 30 "$out/$name-$w.avif"
+      else
+        SVT_LOG=1 ffmpeg -hide_banner -loglevel error -y -i "$in" -vf "scale=${w}:-2:flags=lanczos,format=yuv420p" -c:v "$avif" -crf 30 "$out/$name-$w.avif"
+      fi
       made="$made $out/$name-$w.avif"
     fi
   done
@@ -154,4 +184,11 @@ echo "| --- | --- | ---: |"
 echo "| $(basename "$in") (source) | ${src_w}x${src_h} | $(human "$in_size") |"
 for f in $made; do
   echo "| $(basename "$f") | $(dims "$f") | $(human "$(size_of "$f")") |"
+done
+for f in $made; do
+  case "$f" in *.webm) ;; *) continue ;; esac
+  mp4="${f%.webm}.mp4"
+  if [ -f "$mp4" ] && [ "$(size_of "$f")" -gt "$(size_of "$mp4")" ]; then
+    echo "note: $(basename "$f") is larger than $(basename "$mp4"): ship the MP4 alone at that width"
+  fi
 done

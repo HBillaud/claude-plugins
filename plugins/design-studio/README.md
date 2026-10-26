@@ -35,7 +35,7 @@ Four skills for the design half of client work: redesigning a section from mocku
 | `skills/prep-hero-media/references/hero-media.md` | budgets, encoding settings, wiring for HTML, React and Next.js |
 | `evals/` | one end-to-end case per skill: a scaffold builds a fixture site, the agent works on it, graders check the result |
 
-The scripts need Node 18 or later; the runner also needs the `playwright` package and its Chromium (check-responsive's SKILL.md says how to get them without touching the project), and `transcode.sh` needs ffmpeg (`brew install ffmpeg`). Every script also works without the runner, through the browser pane.
+The scripts need Node 18 or later; the runner also needs the `playwright` package and its Chromium (check-responsive's SKILL.md says how to get them without touching the project), and `transcode.sh` needs ffmpeg plus a WebP encoder (`brew install ffmpeg webp`: Homebrew's ffmpeg has no libwebp, so the script falls back to `cwebp`). Every script also works without the runner, through the browser pane.
 
 To re-run the cases after changing a skill, from this directory:
 
