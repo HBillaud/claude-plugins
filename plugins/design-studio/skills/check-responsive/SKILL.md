@@ -14,7 +14,7 @@ Find the visual regressions the user would otherwise find by eye: text cut off a
 
 From `$ARGUMENTS` and the conversation: the **route** (default `/`), an optional **selector** that scopes the report to one section (`#pillars`, `section.testimonials`), and the **site URL**.
 
-- **Local:** find the dev server in `package.json` scripts or `.claude/launch.json`; start it if nothing answers (`npm run dev`, `python3 -m http.server` for a static site) and note the port.
+- **Local:** find the dev server in `package.json` scripts or `.claude/launch.json`; start it if nothing answers (`npm run dev`) and note the port. A static site (plain HTML, or a built `dist/`) needs no server with the runner: `--serve <folder>` answers its requests from disk. Use that too when starting a server fails because binding a port is not allowed (`EPERM` in a sandbox).
 - **Baseline:** the production URL (from `vercel.json`, `README.md`, the canonical URL in the layout, or ask). Probing it with the same matrix separates what this change broke from what was already broken. Skip it when the route does not exist in production yet.
 - **Themes:** the site themes if its CSS has `prefers-color-scheme`, `dark:` utilities, `next-themes`, or a `data-theme`/`.dark` switch. Class-based themes ignore media emulation; toggle the class instead (below).
 
@@ -29,7 +29,7 @@ node <skill-dir>/scripts/run-matrix.mjs --base http://localhost:3000 --routes /a
   --scope '#pillars' --baseline https://example.com --shots <scratchpad>/responsive --json <scratchpad>/responsive.json
 ```
 
-Defaults: widths `375,390,768,1024,1280,1440`, reduced motion `both`, scheme `light` (`--scheme both` for themed sites). It needs the `playwright` package resolvable from the project or globally; if it is missing, install it outside the project, `npm i --prefix <scratchpad>/pw playwright@1.63.0 && npx --prefix <scratchpad>/pw playwright install chromium` (ask first: it downloads a browser), then prefix the command with `NODE_PATH=<scratchpad>/pw/node_modules`. It prints a table per route, the findings with selectors, and the screenshot paths. With `--baseline`, findings production lacks are marked **new**.
+For a static site, `--serve ./site` replaces `--base`. Defaults: widths `375,390,768,1024,1280,1440`, reduced motion `both`, scheme `light` (`--scheme both` for themed sites). It needs the `playwright` package resolvable from the project or globally; if it is missing, install it outside the project, `npm i --prefix <scratchpad>/pw playwright@1.63.0 && npx --prefix <scratchpad>/pw playwright install chromium` (ask first: it downloads a browser), then prefix the command with `NODE_PATH=<scratchpad>/pw/node_modules`. Inside a macOS sandbox Chromium cannot start its helper processes; the runner says so and retries in single-process mode by itself. It prints a table per route, the findings with selectors, and the screenshot paths. With `--baseline`, findings production lacks are marked **new**.
 
 ### B. In the browser pane
 

@@ -2,8 +2,11 @@
 // Run a page script (probes.js by default) across a viewport matrix in headless Chromium.
 //
 //   node run-matrix.mjs --base http://localhost:3000 --routes /,/about [options]
+//   node run-matrix.mjs --serve ./site --routes /,/about [options]
 //
-//   --base <url>            site origin (required)
+//   --base <url>            site origin (this or --serve is required)
+//   --serve <dir>           serve a static site from this folder without binding a port (requests to
+//                           http://site.test are answered from disk), for when no server can be started
 //   --routes <a,b>          paths to visit (default /)
 //   --widths <a,b>          viewport widths (default 375,390,768,1024,1280,1440)
 //   --height <px>           viewport height (default 900; 812 under 768px wide)
@@ -18,12 +21,53 @@
 //
 // Prints a Markdown table per route for probes.js, or the raw JSON for any other script.
 // Needs the playwright package (and its Chromium) resolvable from the working directory or NODE_PATH.
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+// Where Chromium cannot start its helper processes (a macOS sandbox), it retries in single-process mode.
+import { readFile, writeFile, mkdir, mkdtemp, stat } from "node:fs/promises";
+import os from "node:os";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const SERVED = "http://site.test";
+const MIME = {
+  ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json",
+  ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+  ".avif": "image/avif", ".gif": "image/gif", ".ico": "image/x-icon", ".mp4": "video/mp4", ".webm": "video/webm",
+  ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".txt": "text/plain", ".xml": "application/xml",
+};
+
+// Answers requests to SERVED from a folder, the way python3 -m http.server would: /a/ is a/index.html.
+function serveFrom(dir) {
+  const root = path.resolve(dir);
+  return async (route) => {
+    const file = path.join(root, decodeURIComponent(new URL(route.request().url()).pathname));
+    if (file !== root && !file.startsWith(root + path.sep)) return route.fulfill({ status: 403 });
+    for (const candidate of [file, path.join(file, "index.html"), `${file}.html`]) {
+      try {
+        if (!(await stat(candidate)).isFile()) continue;
+        const type = MIME[path.extname(candidate).toLowerCase()] || "application/octet-stream";
+        return route.fulfill({ status: 200, contentType: type, body: await readFile(candidate) });
+      } catch {}
+    }
+    return route.fulfill({ status: 404, contentType: "text/plain", body: "not found" });
+  };
+}
+
+// Chromium's multi-process mode needs Mach port registration, which a macOS sandbox denies
+// ("bootstrap_check_in ... Permission denied"). A single process starts, but holds one browser context
+// only, so every run shares it: media features are emulated per page, not per context.
+async function launch(chromium) {
+  try {
+    const browser = await chromium.launch();
+    return { context: () => browser.newContext({ deviceScaleFactor: 2 }), shared: false, close: () => browser.close() };
+  } catch (e) {
+    console.error(`Chromium did not start (${String(e.message || e).split("\n")[0]}); retrying in single-process mode.`);
+    const profile = await mkdtemp(path.join(os.tmpdir(), "run-matrix-"));
+    const context = await chromium.launchPersistentContext(profile, { args: ["--single-process", "--no-zygote", "--disable-gpu"], deviceScaleFactor: 2 });
+    return { context: async () => context, shared: true, close: () => context.close() };
+  }
+}
 
 function parseArgs(argv) {
   const args = { routes: "/", widths: "375,390,768,1024,1280,1440", reduced: "both", scheme: "light", height: "" };
@@ -36,7 +80,8 @@ function parseArgs(argv) {
     args[key] = value;
     i++;
   }
-  if (!args.base) throw new Error("--base <url> is required");
+  if (args.serve && !args.base) args.base = SERVED;
+  if (!args.base) throw new Error("--base <url> or --serve <dir> is required");
   return args;
 }
 
@@ -53,7 +98,8 @@ async function loadPlaywright() {
   throw new Error(
     "playwright is not installed here. Use the browser pane instead (see SKILL.md), or install it outside the project:\n" +
       "  npm i --prefix <dir> playwright@1.63.0 && npx --prefix <dir> playwright install chromium\n" +
-      "  NODE_PATH=<dir>/node_modules node run-matrix.mjs ...",
+      "  NODE_PATH=<dir>/node_modules node run-matrix.mjs ...\n" +
+      "(It is looked up in node_modules folders from the working directory upwards, then in NODE_PATH.)",
   );
 }
 
@@ -61,40 +107,49 @@ const both = (v, on, off) => (v === "both" ? [on, off] : v === on ? [on] : [off]
 const key = (kind, f) => `${kind}|${f.selector}`;
 const kinds = ["overflow", "clipped", "hidden", "targets", "images", "motion"];
 
-async function runMatrix(browser, base, args, script) {
+// One page per context, reused for every route and width; with --shots, failures are captured as they are found.
+async function runMatrix(session, base, args, script, shots) {
   const routes = args.routes.split(",").map((r) => r.trim()).filter(Boolean);
   const widths = args.widths.split(",").map(Number);
+  const opts = { ...(args.opts ? JSON.parse(args.opts) : {}), ...(args.scope ? { scope: args.scope } : {}) };
   const results = [];
   for (const scheme of both(args.scheme, "dark", "light")) {
     for (const reduced of both(args.reduced, "on", "off")) {
-      const context = await browser.newContext({
-        colorScheme: scheme,
-        reducedMotion: reduced === "on" ? "reduce" : "no-preference",
-        deviceScaleFactor: 2,
-      });
+      const context = await session.context();
+      if (args.serve && base === SERVED && !context.__served) {
+        await context.route(`${SERVED}/**`, serveFrom(args.serve));
+        context.__served = true;
+      }
+      const page = context.pages()[0] || (await context.newPage());
+      let consoleErrors = [];
+      const onConsole = (m) => m.type() === "error" && consoleErrors.push(m.text().slice(0, 300));
+      const onError = (e) => consoleErrors.push(String(e).slice(0, 300));
+      page.on("console", onConsole);
+      page.on("pageerror", onError);
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: reduced === "on" ? "reduce" : "no-preference" });
       for (const route of routes) {
         for (const width of widths) {
           const height = Number(args.height) || (width < 768 ? 812 : 900);
-          const page = await context.newPage();
           await page.setViewportSize({ width, height });
-          const consoleErrors = [];
-          page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text().slice(0, 300)));
-          page.on("pageerror", (e) => consoleErrors.push(String(e).slice(0, 300)));
-          const url = new URL(route, base).href;
+          consoleErrors = [];
           let result;
           try {
-            await page.goto(url, { waitUntil: "load", timeout: 45000 });
+            await page.goto(new URL(route, base).href, { waitUntil: "load", timeout: 45000 });
             await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
-            const opts = { ...(args.opts ? JSON.parse(args.opts) : {}), ...(args.scope ? { scope: args.scope } : {}) };
             await page.evaluate((o) => (globalThis.__DS_PROBE_OPTS = o), opts);
             result = JSON.parse(await page.evaluate(script));
           } catch (e) {
             result = { error: String(e.message || e).split("\n")[0] };
           }
           result.consoleErrors = consoleErrors;
-          results.push({ route, width, height, reduced, scheme, page, result });
+          const row = { route, width, height, reduced, scheme, result };
+          if (shots) row.shots = await shoot(page, row, shots);
+          results.push(row);
         }
       }
+      page.off("console", onConsole);
+      page.off("pageerror", onError);
+      if (!session.shared) await context.close();
     }
   }
   return results;
@@ -157,28 +212,27 @@ function table(results, baseline) {
   return lines.join("\n");
 }
 
-async function shoot(results, dir) {
+// Screenshots of up to six failing elements of one run, taken while the page is still on it.
+let shotCount = 0;
+async function shoot(page, r, dir) {
+  const x = r.result;
+  if (x.error || !x.overflow) return [];
   await mkdir(dir, { recursive: true });
+  const failing = [
+    ...x.overflow.map((i) => ["overflow", i]),
+    ...x.clipped.filter((c) => !c.intended).map((i) => ["clipped", i]),
+    ...x.hidden.map((i) => ["hidden", i]),
+    ...x.images.filter((i) => i.severity === "fail").map((i) => ["images", i]),
+  ].slice(0, 6);
   const saved = [];
-  for (const r of results) {
-    const x = r.result;
-    if (x.error) continue;
-    const failing = [
-      ...x.overflow.map((i) => ["overflow", i]),
-      ...x.clipped.filter((c) => !c.intended).map((i) => ["clipped", i]),
-      ...x.hidden.map((i) => ["hidden", i]),
-      ...x.images.filter((i) => i.severity === "fail").map((i) => ["images", i]),
-    ].slice(0, 6);
-    for (const [k, item] of failing) {
-      const slug = `${r.route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "home"}-${r.width}-${r.scheme}${r.reduced === "on" ? "-reduced" : ""}-${k}-${saved.length}.png`;
-      const file = path.join(dir, slug);
-      try {
-        const loc = r.page.locator(item.selector).first();
-        await loc.scrollIntoViewIfNeeded({ timeout: 3000 });
-        await r.page.screenshot({ path: file });
-        saved.push(file);
-      } catch {}
-    }
+  for (const [k, item] of failing) {
+    const slug = `${r.route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "home"}-${r.width}-${r.scheme}${r.reduced === "on" ? "-reduced" : ""}-${k}-${shotCount++}.png`;
+    const file = path.join(dir, slug);
+    try {
+      await page.locator(item.selector).first().scrollIntoViewIfNeeded({ timeout: 3000 });
+      await page.screenshot({ path: file });
+      saved.push(file);
+    } catch {}
   }
   return saved;
 }
@@ -190,11 +244,11 @@ async function main() {
   const isProbes = path.basename(scriptPath) === "probes.js";
   const pw = await loadPlaywright();
   const chromium = pw.chromium || (pw.default && pw.default.chromium);
-  const browser = await chromium.launch();
+  const session = await launch(chromium);
   try {
-    const results = await runMatrix(browser, args.base, args, script);
+    const results = await runMatrix(session, args.base, args, script, isProbes && args.shots);
     if (args.baseline && isProbes) {
-      const base = await runMatrix(browser, args.baseline, args, script);
+      const base = await runMatrix(session, args.baseline, args, script);
       for (const r of results) {
         const twin = base.find((b) => b.route === r.route && b.width === r.width && b.reduced === r.reduced && b.scheme === r.scheme);
         const known = new Set();
@@ -202,14 +256,13 @@ async function main() {
         r.newKeys = new Set();
         if (!r.result.error) for (const k of kinds) for (const i of r.result[k]) if (!known.has(key(k, i))) r.newKeys.add(key(k, i));
       }
-      for (const b of base) await b.page.close();
     }
-    const plain = results.map(({ page, newKeys, ...rest }) => ({ ...rest, newFindings: newKeys ? [...newKeys] : undefined }));
+    const plain = results.map(({ newKeys, shots, ...rest }) => ({ ...rest, newFindings: newKeys ? [...newKeys] : undefined }));
     if (args.json) await writeFile(args.json, JSON.stringify(plain, null, 2));
     if (isProbes) {
       console.log(table(results, Boolean(args.baseline)));
       if (args.shots) {
-        const saved = await shoot(results, args.shots);
+        const saved = results.flatMap((r) => r.shots || []);
         console.log(`\nScreenshots of failures (${saved.length}):`);
         for (const s of saved) console.log(`- ${s}`);
       }
@@ -217,7 +270,7 @@ async function main() {
       console.log(JSON.stringify(plain, null, 2));
     }
   } finally {
-    await browser.close();
+    await session.close();
   }
 }
 

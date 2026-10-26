@@ -29,7 +29,7 @@ node <plugin-dir>/skills/check-responsive/scripts/run-matrix.mjs --base http://l
 node <skill-dir>/scripts/type-table.mjs <scratchpad>/type.json --reference /
 ```
 
-(Playwright setup and fallbacks: check-responsive's SKILL.md, step 2.)
+For a static site, `--serve <folder>` replaces `--base` and needs no server. (Playwright setup and fallbacks: check-responsive's SKILL.md, step 2.)
 
 **In the browser pane:** for each route and width, navigate, `resize_window`, pass the text of `scripts/measure-type.js` to the JavaScript tool (re-read `globalThis.__DS_TYPE_RESULT` if the tool does not await), and collect each result as `{"route": "/guide", "width": 1440, "result": <the JSON>}` in an array in a scratchpad file; `type-table.mjs` reads that file the same way. Reset the viewport to desktop afterwards.
 
