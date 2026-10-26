@@ -4,7 +4,8 @@
 One page, /index.html, seeded with defects the probes must report, and look-alikes they must not:
   defects                                              look-alikes (no finding expected)
   - .hero h1 is nowrap and overflows at 375px          - .logos is a horizontal scroller (overflow-x: auto)
-  - .plan p has a fixed height and overflow: hidden    - .teaser p is clamped with -webkit-line-clamp (intended)
+  - .plan p has a fixed height and overflow: hidden    - .teaser p is clamped with -webkit-line-clamp (intended:
+                                                         the card links to the full post)
   - .quotes is a reveal no observer ever fires         - .reveal.features fires on scroll as it should
   - .menu-toggle is a 28x28 tap target                 - the "terms" link sits inline in running text
   - img.portrait is 240x320, drawn at up to 560px wide
@@ -68,8 +69,10 @@ INDEX = """<!doctype html>
       <p>A two-hour site visit, a written assessment of what the building allows, and a fee proposal for the full design, with planning risks named up front.</p>
     </article>
     <article class="teaser">
-      <h3>From the journal</h3>
-      <p>How we restored a 1920s boathouse without losing the salt-stained timber that made it worth saving, and what it cost to keep it.</p>
+      <a href="/journal/boathouse/">
+        <h3>From the journal</h3>
+        <p>How we restored a 1920s boathouse without losing the salt-stained timber that made it worth saving, and what it cost to keep it.</p>
+      </a>
     </article>
   </section>
   <section class="about">
@@ -103,6 +106,7 @@ body{margin:0;font-family:Georgia,serif;color:#1d2a33;background:#f7f4ee}
 .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;padding:32px 20px}
 .plan p{height:3em;overflow:hidden;margin:0}
 .teaser p{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:0}
+.teaser a{display:block;color:inherit;text-decoration:none}
 .about{padding:32px 20px;max-width:600px}
 .portrait{display:block;width:100%;height:auto}
 .quotes{padding:32px 20px}
