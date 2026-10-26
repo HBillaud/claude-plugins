@@ -256,6 +256,13 @@ async function main() {
         r.newKeys = new Set();
         if (!r.result.error) for (const k of kinds) for (const i of r.result[k]) if (!known.has(key(k, i))) r.newKeys.add(key(k, i));
       }
+      // Not one finding in common: production is probably not this codebase yet (another builder, an old site).
+      const found = results.reduce((n, r) => n + (r.result.error ? 0 : kinds.reduce((m, k) => m + r.result[k].length, 0)), 0);
+      const fresh = results.reduce((n, r) => n + (r.newKeys ? r.newKeys.size : 0), 0);
+      const baseFound = base.reduce((n, b) => n + (b.result.error ? 0 : kinds.reduce((m, k) => m + b.result[k].length, 0)), 0);
+      if (found >= 5 && fresh === found && baseFound) {
+        console.error(`No finding matches ${args.baseline}: is production running this codebase? If not, "new" means nothing here.`);
+      }
     }
     const plain = results.map(({ newKeys, shots, ...rest }) => ({ ...rest, newFindings: newKeys ? [...newKeys] : undefined }));
     if (args.json) await writeFile(args.json, JSON.stringify(plain, null, 2));

@@ -22,11 +22,14 @@
   const root = (opts.scope && document.querySelector(opts.scope)) || document.querySelector("main") || document.body;
   const overrides = opts.roles || {};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Instant, whatever the page says: with scroll-behavior: smooth, each scrollTo starts an animation
+  // the next one interrupts, and the page never reaches the sections a reveal is waiting for.
+  const jump = (y) => scrollTo({ top: y, behavior: "instant" });
   await document.fonts.ready;
   // Let scroll-triggered reveals and fluid type settle.
-  scrollTo(0, document.documentElement.scrollHeight);
+  jump(document.documentElement.scrollHeight);
   await sleep(250);
-  scrollTo(0, 0);
+  jump(0);
   await sleep(400);
 
   const cssPath = (el) => {

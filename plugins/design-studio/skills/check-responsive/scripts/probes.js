@@ -6,16 +6,23 @@
 //   scope        CSS selector; only elements inside it are reported (default: whole page)
 //   settleMs     wait after the scroll-through, for reveal transitions to finish (default 900)
 //   stepMs       wait per scroll step, for IntersectionObserver callbacks (default 140)
+//   revealMs     longest wait for an element still transparent once scrolled into view (default 2500:
+//                staggered reveals with a delay of a second or more are common)
 //   minTarget    smallest tap target in CSS px, applied at widths up to 1024 (default 44)
 //   limit        maximum findings reported per probe (default 25)
-// It scrolls the page top to bottom and back, so run it after the page has loaded.
+// It scrolls the page top to bottom and back (and to each element still transparent after that),
+// so run it after the page has loaded.
 (async (opts = globalThis.__DS_PROBE_OPTS || {}) => {
   const settleMs = opts.settleMs ?? 900;
   const stepMs = opts.stepMs ?? 140;
+  const revealMs = opts.revealMs ?? 2500;
   const minTarget = opts.minTarget ?? 44;
   const limit = opts.limit ?? 25;
   const scope = opts.scope ? document.querySelector(opts.scope) : document.body;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Instant, whatever the page says: with scroll-behavior: smooth, each scrollTo starts an animation
+  // the next one interrupts, and the page never reaches the sections a reveal is waiting for.
+  const jump = (y) => scrollTo({ top: y, behavior: "instant" });
   const vw = document.documentElement.clientWidth;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -62,16 +69,25 @@
     return true;
   };
 
+  // Out of reach for a visitor right now: transparent, or not taking pointer events (a closed menu).
+  const untouchable = (el) => {
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (parseFloat(cs.opacity) <= 0.05 || cs.pointerEvents === "none") return true;
+    }
+    return false;
+  };
+
   // Scroll through so lazy images load and scroll-triggered reveals fire, then come back.
   const startY = scrollY;
   const maxY = () => document.documentElement.scrollHeight - innerHeight;
   for (let y = 0; y <= maxY(); y += Math.max(200, Math.round(innerHeight * 0.6))) {
-    scrollTo(0, y);
+    jump(y);
     await sleep(stepMs);
   }
-  scrollTo(0, maxY());
+  jump(maxY());
   await sleep(stepMs);
-  scrollTo(0, startY);
+  jump(startY);
   await sleep(settleMs);
 
   const all = [...scope.querySelectorAll("*")];
@@ -129,7 +145,9 @@
       return (overY && r.bottom > er.bottom + 1) || (overX && r.right > er.right + 1);
     });
     if (!cut) continue;
-    const intended = cs.textOverflow === "ellipsis" || (cs.webkitLineClamp && cs.webkitLineClamp !== "none");
+    // A marquee (a track looping inside a clipped strip) is clipped on purpose.
+    const marquee = overX && !overY && el.getAnimations && el.getAnimations({ subtree: true }).some((a) => a.effect && a.effect.getComputedTiming().iterations === Infinity);
+    const intended = cs.textOverflow === "ellipsis" || (cs.webkitLineClamp && cs.webkitLineClamp !== "none") || marquee;
     clipped.push({
       selector: cssPath(el),
       axis: overX && overY ? "both" : overX ? "x" : "y",
@@ -140,12 +158,17 @@
     });
   }
 
-  // 3. Content still invisible after the scroll-through: a reveal that never fired.
-  const hidden = [];
+  // 3. Content still invisible after the scroll-through: a reveal that never fired. A fast scroll can
+  //    pass a reveal before its observer reports it, and scroll-linked motion hides what is out of view,
+  //    so each candidate is then scrolled into view on its own: only what stays transparent there is reported.
+  const candidates = [];
   for (const el of all) {
-    if (hidden.length >= limit) break;
+    if (candidates.length >= limit) break;
     const cs = getComputedStyle(el);
     if (parseFloat(cs.opacity) > 0.05) continue;
+    // Transparent and not taking pointer events is a toggled state (a closed menu, a scroll cue
+    // hidden once the page has scrolled), not a reveal that never fired.
+    if (cs.pointerEvents === "none") continue;
     if (!rendered(el)) continue;
     if (!text(el) && !el.querySelector("img, svg, video, picture, canvas") && !/^(img|svg|video|picture|canvas)$/.test(el.localName)) continue;
     // Report the outermost transparent element only.
@@ -154,8 +177,22 @@
       if (parseFloat(getComputedStyle(n).opacity) <= 0.05) { outer = true; break; }
     }
     if (outer) continue;
-    const r = el.getBoundingClientRect();
-    hidden.push({ selector: cssPath(el), opacity: cs.opacity, transform: cs.transform === "none" ? null : cs.transform, text: snippet(el), box: box(r) });
+    candidates.push(el);
+  }
+  const hidden = [];
+  for (const el of candidates) {
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    let cs = getComputedStyle(el);
+    for (let waited = 0; waited < revealMs && parseFloat(cs.opacity) <= 0.05; waited += 100) {
+      await sleep(100);
+      cs = getComputedStyle(el);
+    }
+    if (parseFloat(cs.opacity) > 0.05) continue;
+    hidden.push({ selector: cssPath(el), opacity: cs.opacity, transform: cs.transform === "none" ? null : cs.transform, text: snippet(el), box: box(el.getBoundingClientRect()) });
+  }
+  if (candidates.length) {
+    jump(startY);
+    await sleep(stepMs);
   }
 
   // 4. Tap targets under minTarget on touch-sized viewports. Inline links in running text are exempt (WCAG 2.5.8).
@@ -164,7 +201,7 @@
     const interactive = scope.querySelectorAll("a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=tab], [role=menuitem], [tabindex]:not([tabindex='-1'])");
     for (const el of interactive) {
       if (targets.length >= limit) break;
-      if (!rendered(el)) continue;
+      if (!rendered(el) || untouchable(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.width >= minTarget && r.height >= minTarget) continue;
       const parent = el.parentElement;
@@ -209,7 +246,8 @@
       const t = a.effect && a.effect.getComputedTiming ? a.effect.getComputedTiming() : {};
       const target = a.effect && a.effect.target;
       if (target && !inScope(target)) continue;
-      if ((t.duration || 0) <= 10 && t.iterations !== Infinity) continue;
+      // A finite animation of 200ms or less (a progress bar easing, a quick fade) is not motion to suppress.
+      if ((t.duration || 0) <= 200 && t.iterations !== Infinity) continue;
       motion.push({ selector: target ? cssPath(target) : "(document)", name: a.animationName || a.transitionProperty || a.id || a.constructor.name, duration: t.duration, iterations: String(t.iterations) });
     }
     for (const v of scope.querySelectorAll("video")) {

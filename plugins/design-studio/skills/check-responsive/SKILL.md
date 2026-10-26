@@ -15,7 +15,7 @@ Find the visual regressions the user would otherwise find by eye: text cut off a
 From `$ARGUMENTS` and the conversation: the **route** (default `/`), an optional **selector** that scopes the report to one section (`#pillars`, `section.testimonials`), and the **site URL**.
 
 - **Local:** find the dev server in `package.json` scripts or `.claude/launch.json`; start it if nothing answers (`npm run dev`) and note the port. A static site (plain HTML, or a built `dist/`) needs no server with the runner: `--serve <folder>` answers its requests from disk. Use that too when starting a server fails because binding a port is not allowed (`EPERM` in a sandbox).
-- **Baseline:** the production URL (from `vercel.json`, `README.md`, the canonical URL in the layout, or ask). Probing it with the same matrix separates what this change broke from what was already broken. Skip it when the route does not exist in production yet.
+- **Baseline:** the production URL (from `vercel.json`, `README.md`, the canonical URL in the layout, or ask). Probing it with the same matrix separates what this change broke from what was already broken. Skip it when the route does not exist in production yet, or when production still serves another site (an old builder's pages: the runner warns when no finding matches).
 - **Themes:** the site themes if its CSS has `prefers-color-scheme`, `dark:` utilities, `next-themes`, or a `data-theme`/`.dark` switch. Class-based themes ignore media emulation; toggle the class instead (below).
 
 ## 2. Run the matrix
@@ -48,14 +48,14 @@ The probes over-report on purpose; you decide what is a defect. Read the element
 
 | Probe | A real defect when | Not a defect when |
 | --- | --- | --- |
-| **overflow** (`cause=box` or `text`) and the document's `scrollWidth > clientWidth` | anything at 375 or 390: the page scrolls sideways on a phone | the element sits inside a deliberate horizontal scroller (the probe already skips `overflow-x: auto` ancestors) |
-| **clipped** | `intended=false`: a fixed `height` or `max-height` with `overflow: hidden` cutting text as lines wrap | `intended=true` (`line-clamp`, `text-overflow: ellipsis`) and the full text is reachable elsewhere |
-| **hidden** (opacity 0 after the scroll-through) | a reveal whose observer never fired, a threshold the section can never reach on a short viewport, or a JS-only initial state with no fallback | a closed menu, an inactive carousel slide, a hover overlay: check that it becomes visible through its own interaction |
-| **targets** under 44px (widths up to 1024) | icon buttons, nav links, carousel dots, close buttons | inline links in running text (already skipped), or a small visual whose padding makes the hit area 44px (re-measure the padded element) |
+| **overflow** (`cause=box` or `text`) | with the document's `scrollWidth > clientWidth`, anything at 375 or 390: the page scrolls sideways on a phone. Without it, a fixed or clipped bar whose end is cut off (nav links pushed past the edge at exactly 768) | the element sits inside a deliberate horizontal scroller (the probe already skips `overflow-x: auto` ancestors) |
+| **clipped** | `intended=false`: a fixed `height` or `max-height` with `overflow: hidden` cutting text as lines wrap, or a panel narrower than its text at one width | `intended=true` (`line-clamp`, `text-overflow: ellipsis`, or a marquee looping inside a clipped strip) and the full text is reachable elsewhere |
+| **hidden** (opacity 0 after the scroll-through) | a reveal whose observer never fired, a threshold the section can never reach on a short viewport (a tall form that only fails at one width), or a JS-only initial state with no fallback | an inactive carousel slide, a hover overlay, a scroll cue that fades once the page has scrolled: check that it becomes visible through its own interaction. Transparent elements with `pointer-events: none` (a closed menu) are already skipped |
+| **targets** under 44px (widths up to 1024) | icon buttons, nav links, carousel dots, close buttons, footer link rows | inline links in running text and links inside a closed menu (both already skipped), or a small visual whose padding makes the hit area 44px (re-measure the padded element). A wide link only short of 44px tall (a 270x39 logo) is a warning |
 | **images** `severity=fail` (density under 1) | always: the image is upscaled; ask for a larger original or render it smaller | — |
 | **images** `soft-here` or `warn` (density under 2) | portraits and hero imagery, where softness shows on retina screens | thumbnails, logos with an SVG alternative, deliberately blurred backdrops |
-| **motion** (only when reduced motion is on) | anything infinite, parallax, autoplaying video, scroll-jacking | a fade of 200ms or less that only changes opacity |
-| **console** hydration errors, error overlays | always on a production build; on a dev server, confirm with `next build && next start` before reporting | warnings from browser extensions |
+| **motion** (only when reduced motion is on) | anything infinite, parallax, autoplaying video, scroll-jacking; an infinite loop on an element the probe found hidden still plays for visitors at the top of the page | finite animations of 200ms or less are already skipped |
+| **console** hydration errors, error overlays | always on a production build; on a dev server, confirm with `next build && next start` before reporting | warnings from browser extensions; a CMS's live-preview endpoint refusing `localhost` (CORS errors from `api.sanity.io` and the like) |
 
 A reveal stuck at opacity 0 has a standard fix: content is visible by default, and the hidden initial state applies only once JavaScript has run and motion is allowed (`html.js-motion .reveal { opacity: 0 }`), with a timeout that reveals everything if the observer never fires. Text cut off has one too: replace fixed heights with `min-height`, or let the grid row size to content.
 
