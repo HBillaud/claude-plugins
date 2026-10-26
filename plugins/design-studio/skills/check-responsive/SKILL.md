@@ -62,7 +62,7 @@ A reveal stuck at opacity 0 has a standard fix: content is visible by default, a
 
 ## 4. Report
 
-One table per route: widths as rows, a ✅/⚠️/❌ per probe, the counts, and with a baseline the number of **new** findings. Then, for each finding you kept:
+One table per route: one row per width and reduced-motion setting (as the runner prints it, or say plainly which rows had reduced motion on), a ✅/⚠️/❌ and the count in every probe cell (not counts alone), and with a baseline the number of **new** findings. Then, for each finding you kept:
 
 - the breakpoint(s), the probe, the **selector**, what it measured (`574px wide in a 375px viewport`, `natural 240x320 drawn at 560x747`), and the likely fix (`file:line` when you can find the rule);
 - a screenshot only for failures (the runner's `--shots`, or a pane screenshot at that width).

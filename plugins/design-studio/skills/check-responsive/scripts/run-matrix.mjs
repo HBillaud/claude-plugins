@@ -186,8 +186,11 @@ function table(results, baseline) {
       const f = x.fails;
       const bad = f.overflow + f.clipped + f.hidden + f.images + f.motion + f.overlays + hyd;
       const verdict = bad ? "❌" : f.targets || x.images.length || x.clipped.length ? "⚠️" : "✅";
+      // Each probe cell carries its own mark: ❌ a defect to triage, ⚠️ worth a look, ✅ clean.
+      const mark = (fail, warn) => (fail ? "❌ " : warn ? "⚠️ " : "✅ ");
+      const intended = x.clipped.length - f.clipped;
       lines.push(
-        `| ${r.width} | ${r.scheme} | ${r.reduced} | ${docOver} | ${n("overflow", x.overflow.length)} | ${n("clipped", f.clipped)}${x.clipped.length - f.clipped ? ` (+${x.clipped.length - f.clipped} intended)` : ""} | ${n("hidden", f.hidden)} | ${n("targets", f.targets)} | ${n("images", x.images.length)} | ${n("motion", f.motion)} | ${x.consoleErrors.length}${hyd ? ` (${hyd} hydration)` : ""} | ${verdict} |`,
+        `| ${r.width} | ${r.scheme} | ${r.reduced} | ${docOver} | ${mark(f.overflow)}${n("overflow", x.overflow.length)} | ${mark(f.clipped, intended)}${n("clipped", f.clipped)}${intended ? ` (+${intended} intended)` : ""} | ${mark(f.hidden)}${n("hidden", f.hidden)} | ${mark(0, f.targets)}${n("targets", f.targets)} | ${mark(f.images, x.images.length)}${n("images", x.images.length)} | ${r.reduced === "on" ? `${mark(f.motion)}${n("motion", f.motion)}` : "—"} | ${mark(f.overlays + hyd, x.consoleErrors.length)}${x.consoleErrors.length}${hyd ? ` (${hyd} hydration)` : ""} | ${verdict} |`,
       );
     }
     const details = [];
