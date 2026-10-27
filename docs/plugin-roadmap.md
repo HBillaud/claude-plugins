@@ -193,13 +193,13 @@ Nearly every session follows one of five loops:
 
 ## Progress
 
-- [ ] `redesign-section`
+- [x] `redesign-section`
 - [ ] `map-client-changes`
 - [ ] `audit-geo`
-- [ ] `check-responsive`
+- [x] `check-responsive`
 - [ ] `check-launch`
-- [ ] `audit-type-scale`
+- [x] `audit-type-scale`
 - [ ] `wire-inquiry-form`
-- [ ] `prep-hero-media`
+- [x] `prep-hero-media`
 - [ ] `audit-business-facts`
 - [ ] `add-bilingual-content`
