@@ -29,7 +29,7 @@ The loop is always the same: mockups, a pick, a build. So are its failures: mobi
 3. Read the design system: tokens in the Tailwind config or `globals.css` (colors, type, spacing, easing), the components the section can reuse, and the brand guides (`docs/BRAND_IDENTITY_GUIDE_*.md` or similar), which set the voice and the motion character.
 4. Read the live section: open the production URL in the browser (or the dev server) at 1440 and 375, and screenshot both. That is artboard 0.
 
-**Stop and list what you found** before mocking: the component and data files, every twin with its route and the name the page gives it, every copy hit, and what you will treat as in scope. Each twin either changes with the redesign or is named as out of scope by the user. This is where "I forgot to mention it also appears on..." came from. Write the list in your reply before the canvas even when the user is away or told you to decide on your own: then it is the record of what you chose to cover, and it goes into the report's "What changed" and "Not in this PR".
+**Stop and list what you found**, as a message to the user, before you write any file of the canvas: the component and data files, every twin with its route and the name the page gives it, every copy hit, and what you will treat as in scope. Each twin either changes with the redesign or is named as out of scope by the user. This is where "I forgot to mention it also appears on..." came from. Send it even when the user is away or told you to decide on your own (then go on without waiting): a list that first appears in the final report comes too late to be corrected.
 
 ## Phase 2. Mock
 
@@ -68,7 +68,7 @@ Commit when the user asked for a branch (they usually do: "in a new branch"); pu
 
 - **The problem**: what the section was and what the user wanted from it.
 - **What changed**: the direction picked and the files, including each twin.
-- **Verification**: the contract table (item, ✅/❌, note), the check-responsive table, and the side-by-side screenshots.
+- **Verification**: the contract table itself, one row per item (item, ✅/❌, note), copied into the report rather than pointed to; the check-responsive table; and the side-by-side screenshots.
 - **Not in this PR**: twins and neighbours deliberately left alone, ideas from other directions not taken.
 - **For the client's attention**: copy that is missing or placeholder, typos fixed, anything that changes how the content reads.
 
