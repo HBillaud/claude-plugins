@@ -1,0 +1,6 @@
+{
+  "name": "design-studio",
+  "version": "0.1.0",
+  "description": "Design workflows for client sites: section redesigns from mockups to an end-to-end build, responsive and motion QA in the browser, type-scale audits across routes, and hero media prep",
+  "author": { "name": "Hadrien" }
+}

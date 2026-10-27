@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: responsive-defects
+expected_outcome: |
+  The agent serves ./harbor, probes / across the breakpoint matrix with reduced motion on and off,
+  and writes ./RESPONSIVE.md with a table per breakpoint and one finding per seeded defect, each with
+  its selector: the nowrap hero h1 overflowing at 375px, the .plan paragraph clipped by a fixed
+  height, the .quotes reveal stuck at opacity 0, the 28px .menu-toggle, the upscaled img.portrait,
+  and the .marquee animation running under reduced motion. It does not report the .logos scroller,
+  the line-clamped .teaser or the inline "terms" link as defects. It changes no file in ./harbor.
+runs: 1
+context:
+  scaffold_script: place-files.sh
