@@ -17,6 +17,8 @@
 //   --opts <json>           extra options for the page script, set as globalThis.__DS_PROBE_OPTS
 //   --baseline <url>        run the same matrix on this origin too (production) and mark findings it lacks as new
 //   --shots <dir>           save a screenshot of each failing element (probes.js only)
+//   --capture <selector>    also save a screenshot of this element in every run, failing or not, to
+//                           <--shots dir> (default ./captures): the built section at each breakpoint
 //   --json <file>           write every result as JSON
 //
 // Prints a Markdown table per route for probes.js, or the raw JSON for any other script.
@@ -144,6 +146,7 @@ async function runMatrix(session, base, args, script, shots) {
           result.consoleErrors = consoleErrors;
           const row = { route, width, height, reduced, scheme, result };
           if (shots) row.shots = await shoot(page, row, shots);
+          if (args.capture && base === args.base) row.capture = await capture(page, row, args.capture, args.shots || "captures");
           results.push(row);
         }
       }
@@ -216,6 +219,19 @@ function table(results, baseline) {
   return lines.join("\n");
 }
 
+// One element, whatever the probes found: for comparing a built section with its mockup.
+async function capture(page, r, selector, dir) {
+  await mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${r.route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "home"}-${r.width}-${r.scheme}${r.reduced === "on" ? "-reduced" : ""}-capture.png`);
+  if (!(await page.locator(selector).count())) return `no element matches ${selector} here (a twin may need its own selector: "#pillars, #standard")`;
+  try {
+    await page.locator(selector).first().screenshot({ path: file, timeout: 5000 });
+    return file;
+  } catch (e) {
+    return `not captured (${String(e.message || e).split("\n")[0]})`;
+  }
+}
+
 // Screenshots of up to six failing elements of one run, taken while the page is still on it.
 let shotCount = 0;
 async function shoot(page, r, dir) {
@@ -268,10 +284,14 @@ async function main() {
         console.error(`No finding matches ${args.baseline}: is production running this codebase? If not, "new" means nothing here.`);
       }
     }
-    const plain = results.map(({ newKeys, shots, ...rest }) => ({ ...rest, newFindings: newKeys ? [...newKeys] : undefined }));
+    const plain = results.map(({ newKeys, shots, capture: _capture, ...rest }) => ({ ...rest, newFindings: newKeys ? [...newKeys] : undefined }));
     if (args.json) await writeFile(args.json, JSON.stringify(plain, null, 2));
     if (isProbes) {
       console.log(table(results, Boolean(args.baseline)));
+      if (args.capture) {
+        console.log(`\nCaptures of ${args.capture} (${results.length}):`);
+        for (const r of results) console.log(`- ${r.route} ${r.width}px ${r.scheme}${r.reduced === "on" ? " reduced" : ""}: ${r.capture}`);
+      }
       if (args.shots) {
         const saved = results.flatMap((r) => r.shots || []);
         console.log(`\nScreenshots of failures (${saved.length}):`);

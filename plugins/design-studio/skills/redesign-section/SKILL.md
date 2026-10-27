@@ -29,7 +29,7 @@ The loop is always the same: mockups, a pick, a build. So are its failures: mobi
 3. Read the design system: tokens in the Tailwind config or `globals.css` (colors, type, spacing, easing), the components the section can reuse, and the brand guides (`docs/BRAND_IDENTITY_GUIDE_*.md` or similar), which set the voice and the motion character.
 4. Read the live section: open the production URL in the browser (or the dev server) at 1440 and 375, and screenshot both. That is artboard 0.
 
-**Stop and list what you found** before mocking: the component and data files, every twin with its route, every copy hit, and what you will treat as in scope. Each twin either changes with the redesign or is named as out of scope by the user. This is where "I forgot to mention it also appears on..." came from.
+**Stop and list what you found** before mocking: the component and data files, every twin with its route and the name the page gives it, every copy hit, and what you will treat as in scope. Each twin either changes with the redesign or is named as out of scope by the user. This is where "I forgot to mention it also appears on..." came from. Write the list in your reply before the canvas even when the user is away or told you to decide on your own: then it is the record of what you chose to cover, and it goes into the report's "What changed" and "Not in this PR".
 
 ## Phase 2. Mock
 
@@ -59,7 +59,7 @@ When the user picks, write down what the mockup fixes, from the artboards themse
 ## Phase 5. Verify
 
 1. Run check-responsive on every route that renders the section or a twin, scoped to the section, at 375, 768, 1024 and 1440, with reduced motion on and off: follow `<plugin-dir>/skills/check-responsive/SKILL.md` (the runner: `node <plugin-dir>/skills/check-responsive/scripts/run-matrix.mjs --base <dev-url> --routes <routes> --widths 375,768,1024,1440 --scope <selector> --shots <scratchpad>/verify`). Fix what it finds.
-2. Screenshot the built section at each breakpoint and place each one beside the matching mockup artboard (add a "Built" row to the canvas, or compare side by side in the browser). Go through the contract: each item is ✅, or ❌ with what differs. Fix every ❌ that is not a deliberate change the user agreed to.
+2. Screenshot the built section at each breakpoint (the runner's `--capture <selector>` saves one per width, for the section and each twin) and place each one beside the matching mockup artboard (add a "Built" row to the canvas, or compare side by side in the browser). Go through the contract: each item is ✅, or ❌ with what differs. Fix every ❌ that is not a deliberate change the user agreed to.
 3. Watch the motion once at desktop: trigger, duration and easing as noted, nothing janky, and with reduced motion on, the stated reduced state.
 
 ## Report

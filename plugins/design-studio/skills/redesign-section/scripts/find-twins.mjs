@@ -220,7 +220,8 @@ function placements(f, idents) {
   const lines = read(f).split("\n");
   const out = [];
   lines.forEach((line, i) => {
-    if (!idents.some((id) => new RegExp(`<${id}[\\s/>]`).test(line))) return;
+    // A component as JSX (<PillarArchLinks />), or a render function called by name (renderPillars(root)).
+    if (!idents.some((id) => new RegExp(`<${id}[\\s/>]|\\b${id}\\s*\\(`).test(line)) || /^\s*(import|export)\b/.test(line)) return;
     const labels = [];
     for (let j = i; j >= Math.max(0, i - 25) && labels.length < 2; j--) {
       const l = lines[j];
@@ -272,13 +273,17 @@ list("Seed components", [...seeds].map((s) => `- ${rel(s)}`));
 list("Content modules they read", [...dataModules].map(([d, k]) => `- ${rel(d)}${k === "shared" ? " (shared with other sections: only the section's part counts)" : ""}`));
 list("Routes rendering the seed components", [...seeds].flatMap((s) => [`- ${rel(s)}`, ...routeLines(s)]));
 
-const placed = [];
-for (const s of seeds) for (const user of importedBy.get(s) || []) {
-  if (seeds.has(user) || isTest(user)) continue;
-  const idents = imports.get(user).get(s) || [path.basename(s).replace(/\.[^.]+$/, "")];
-  placed.push(...placements(user, idents.filter((n) => /^[A-Z]/.test(n))));
-}
-list("Where each seed is rendered, and what the page calls that section", placed);
+// Where the files importing `file` render it: a component, or a render function.
+const renderedAt = (file, skip) => {
+  const lines = [];
+  for (const user of importedBy.get(file) || []) {
+    if (skip.has(user) || isTest(user)) continue;
+    const idents = imports.get(user).get(file) || [path.basename(file).replace(/\.[^.]+$/, "")];
+    lines.push(...placements(user, idents.filter((n) => /^[A-Z]/.test(n) || /^(render|mount|create|build|draw)[A-Z]/.test(n))));
+  }
+  return lines;
+};
+list("Where each seed is rendered, and what the page calls that section", [...seeds].flatMap((s) => renderedAt(s, seeds)));
 
 const readers = new Map(); // twin -> the content modules it reads
 for (const [d, k] of dataModules) {
@@ -294,6 +299,7 @@ for (const [user, mods] of readers) {
   twins.push(`- ${rel(user)} reads ${mods.map(rel).join(", ")}${viaSeed ? " (and also renders a seed component)" : ""}`, ...routeLines(user));
 }
 list("Twins: other files reading the same content", twins);
+list("Where each twin is rendered, and what the page calls it", [...readers.keys()].flatMap((t) => renderedAt(t, seeds)));
 
 // Copy search: distinctive string literals from the section's content, plus every --text. In a shared
 // module, the section's content is its section-named declarations and the lines naming its keys.
