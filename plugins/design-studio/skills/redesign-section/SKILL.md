@@ -33,7 +33,7 @@ The loop is always the same: mockups, a pick, a build. So are its failures: mobi
 
 ## Phase 2. Mock
 
-Publish **one canvas**: the current section as artboard 0, then 3 to 6 directions. Each direction has:
+Publish **one canvas**. It opens with a **scope note**, the Phase 1 list as the user will read it while picking: the section and its route, each twin with its route and the name the page gives it and whether it changes, and each copy hit (`llms.txt`, JSON-LD) with what happens to it. Then the current section as artboard 0, then 3 to 6 directions. Each direction has:
 
 - a **desktop artboard** (1440 wide) and a **375px artboard**, side by side, both with the real copy at its real length;
 - a **motion note**: each animated element with its trigger (on load, on entering the viewport at a threshold, on scroll progress, on hover), duration, easing, and its **reduced-motion state** (what a visitor with reduced motion sees instead: usually the end state, or a short opacity fade);
