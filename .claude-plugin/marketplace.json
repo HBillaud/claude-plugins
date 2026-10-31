@@ -32,6 +32,13 @@
       "description": "Refactor a repository's coding-agent configuration into one canonical source with thin per-agent adapters, measured and held by a CI guard",
       "category": "skill",
       "keywords": ["agents-md", "claude-md", "skills", "codex", "refactor"]
+    },
+    {
+      "name": "design-studio",
+      "source": "./plugins/design-studio",
+      "description": "Design workflows for client sites: section redesigns from mockups to an end-to-end build, responsive and motion QA in the browser, type-scale audits across routes, and hero media prep",
+      "category": "skill",
+      "keywords": ["design", "mockups", "responsive", "motion", "typography", "video", "web-agency"]
     }
   ]
 }

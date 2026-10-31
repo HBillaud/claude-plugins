@@ -1,0 +1,14 @@
+schema_version: "1.1"
+name: redesign-pillars
+expected_outcome: |
+  Before mocking, the agent names both places the pillars render: /pillars/ through
+  src/components/pillars.js, and / through "The Aurelle Standard" in src/components/standard.js,
+  which reads the same src/data/pillars.js, plus the copy repeated in public/llms.txt. It publishes
+  or writes one canvas with the current section and at least three directions, each with a desktop
+  and a 375px artboard and a motion note that states a reduced-motion state. It writes a contract
+  for the picked direction, builds it on a redesign/pillars branch cut from main, keeps the copy in
+  src/data/pillars.js, adds a prefers-reduced-motion branch, leaves the hero and testimonials alone,
+  keeps .claude/launch.json out of every commit, and checks each breakpoint against the contract.
+runs: 1
+context:
+  scaffold_script: place-files.sh

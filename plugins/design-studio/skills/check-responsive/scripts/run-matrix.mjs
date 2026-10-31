@@ -1,0 +1,311 @@
+#!/usr/bin/env node
+// Run a page script (probes.js by default) across a viewport matrix in headless Chromium.
+//
+//   node run-matrix.mjs --base http://localhost:3000 --routes /,/about [options]
+//   node run-matrix.mjs --serve ./site --routes /,/about [options]
+//
+//   --base <url>            site origin (this or --serve is required)
+//   --serve <dir>           serve a static site from this folder without binding a port (requests to
+//                           http://site.test are answered from disk), for when no server can be started
+//   --routes <a,b>          paths to visit (default /)
+//   --widths <a,b>          viewport widths (default 375,390,768,1024,1280,1440)
+//   --height <px>           viewport height (default 900; 812 under 768px wide)
+//   --reduced <on|off|both> prefers-reduced-motion (default both)
+//   --scheme <light|dark|both>  prefers-color-scheme (default light)
+//   --scope <selector>      only report elements inside it (probes.js)
+//   --script <path>         page script to run instead of probes.js (it must evaluate to a JSON string)
+//   --opts <json>           extra options for the page script, set as globalThis.__DS_PROBE_OPTS
+//   --baseline <url>        run the same matrix on this origin too (production) and mark findings it lacks as new
+//   --shots <dir>           save a screenshot of each failing element (probes.js only)
+//   --capture <selector>    also save a screenshot of this element in every run, failing or not, to
+//                           <--shots dir> (default ./captures): the built section at each breakpoint
+//   --json <file>           write every result as JSON
+//
+// Prints a Markdown table per route for probes.js, or the raw JSON for any other script.
+// Needs the playwright package (and its Chromium) resolvable from the working directory or NODE_PATH.
+// Where Chromium cannot start its helper processes (a macOS sandbox), it retries in single-process mode.
+import { readFile, writeFile, mkdir, mkdtemp, stat } from "node:fs/promises";
+import os from "node:os";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const SERVED = "http://site.test";
+const MIME = {
+  ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json",
+  ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+  ".avif": "image/avif", ".gif": "image/gif", ".ico": "image/x-icon", ".mp4": "video/mp4", ".webm": "video/webm",
+  ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".txt": "text/plain", ".xml": "application/xml",
+};
+
+// Answers requests to SERVED from a folder, the way python3 -m http.server would: /a/ is a/index.html.
+function serveFrom(dir) {
+  const root = path.resolve(dir);
+  return async (route) => {
+    const file = path.join(root, decodeURIComponent(new URL(route.request().url()).pathname));
+    if (file !== root && !file.startsWith(root + path.sep)) return route.fulfill({ status: 403 });
+    for (const candidate of [file, path.join(file, "index.html"), `${file}.html`]) {
+      try {
+        if (!(await stat(candidate)).isFile()) continue;
+        const type = MIME[path.extname(candidate).toLowerCase()] || "application/octet-stream";
+        return route.fulfill({ status: 200, contentType: type, body: await readFile(candidate) });
+      } catch {}
+    }
+    return route.fulfill({ status: 404, contentType: "text/plain", body: "not found" });
+  };
+}
+
+// Chromium's multi-process mode needs Mach port registration, which a macOS sandbox denies
+// ("bootstrap_check_in ... Permission denied"). A single process starts, but holds one browser context
+// only, so every run shares it: media features are emulated per page, not per context.
+async function launch(chromium) {
+  try {
+    const browser = await chromium.launch();
+    return { context: () => browser.newContext({ deviceScaleFactor: 2 }), shared: false, close: () => browser.close() };
+  } catch (e) {
+    console.error(`Chromium did not start (${String(e.message || e).split("\n")[0]}); retrying in single-process mode.`);
+    const profile = await mkdtemp(path.join(os.tmpdir(), "run-matrix-"));
+    const context = await chromium.launchPersistentContext(profile, { args: ["--single-process", "--no-zygote", "--disable-gpu"], deviceScaleFactor: 2 });
+    return { context: async () => context, shared: true, close: () => context.close() };
+  }
+}
+
+function parseArgs(argv) {
+  const args = { routes: "/", widths: "375,390,768,1024,1280,1440", reduced: "both", scheme: "light", height: "" };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) throw new Error(`unexpected argument: ${a}`);
+    const key = a.slice(2);
+    const value = argv[i + 1];
+    if (value === undefined || value.startsWith("--")) throw new Error(`${a} needs a value`);
+    args[key] = value;
+    i++;
+  }
+  if (args.serve && !args.base) args.base = SERVED;
+  if (!args.base) throw new Error("--base <url> or --serve <dir> is required");
+  return args;
+}
+
+async function loadPlaywright() {
+  const require = createRequire(path.join(process.cwd(), "noop.js"));
+  for (const name of ["playwright", "playwright-core", "@playwright/test"]) {
+    try {
+      return require(name);
+    } catch {}
+    try {
+      return await import(name);
+    } catch {}
+  }
+  throw new Error(
+    "playwright is not installed here. Use the browser pane instead (see SKILL.md), or install it outside the project:\n" +
+      "  npm i --prefix <dir> playwright@1.63.0 && npx --prefix <dir> playwright install chromium\n" +
+      "  NODE_PATH=<dir>/node_modules node run-matrix.mjs ...\n" +
+      "(It is looked up in node_modules folders from the working directory upwards, then in NODE_PATH.)",
+  );
+}
+
+const both = (v, on, off) => (v === "both" ? [on, off] : v === on ? [on] : [off]);
+const key = (kind, f) => `${kind}|${f.selector}`;
+const kinds = ["overflow", "clipped", "hidden", "targets", "images", "motion"];
+
+// One page per context, reused for every route and width; with --shots, failures are captured as they are found.
+async function runMatrix(session, base, args, script, shots) {
+  const routes = args.routes.split(",").map((r) => r.trim()).filter(Boolean);
+  const widths = args.widths.split(",").map(Number);
+  const opts = { ...(args.opts ? JSON.parse(args.opts) : {}), ...(args.scope ? { scope: args.scope } : {}) };
+  const results = [];
+  for (const scheme of both(args.scheme, "dark", "light")) {
+    for (const reduced of both(args.reduced, "on", "off")) {
+      const context = await session.context();
+      if (args.serve && base === SERVED && !context.__served) {
+        await context.route(`${SERVED}/**`, serveFrom(args.serve));
+        context.__served = true;
+      }
+      const page = context.pages()[0] || (await context.newPage());
+      let consoleErrors = [];
+      const onConsole = (m) => m.type() === "error" && consoleErrors.push(m.text().slice(0, 300));
+      const onError = (e) => consoleErrors.push(String(e).slice(0, 300));
+      page.on("console", onConsole);
+      page.on("pageerror", onError);
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: reduced === "on" ? "reduce" : "no-preference" });
+      for (const route of routes) {
+        for (const width of widths) {
+          const height = Number(args.height) || (width < 768 ? 812 : 900);
+          await page.setViewportSize({ width, height });
+          consoleErrors = [];
+          let result;
+          try {
+            await page.goto(new URL(route, base).href, { waitUntil: "load", timeout: 45000 });
+            await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+            await page.evaluate((o) => (globalThis.__DS_PROBE_OPTS = o), opts);
+            result = JSON.parse(await page.evaluate(script));
+          } catch (e) {
+            result = { error: String(e.message || e).split("\n")[0] };
+          }
+          result.consoleErrors = consoleErrors;
+          const row = { route, width, height, reduced, scheme, result };
+          if (shots) row.shots = await shoot(page, row, shots);
+          if (args.capture && base === args.base) row.capture = await capture(page, row, args.capture, args.shots || "captures");
+          results.push(row);
+        }
+      }
+      page.off("console", onConsole);
+      page.off("pageerror", onError);
+      if (!session.shared) await context.close();
+    }
+  }
+  return results;
+}
+
+function hydrationErrors(errors) {
+  return errors.filter((e) => /hydrat|did not match|server rendered|Minified React error #4(18|19|23|25)/i.test(e));
+}
+
+function table(results, baseline) {
+  const lines = [];
+  const byRoute = new Map();
+  for (const r of results) {
+    if (!byRoute.has(r.route)) byRoute.set(r.route, []);
+    byRoute.get(r.route).push(r);
+  }
+  for (const [route, rows] of byRoute) {
+    lines.push(`\n### ${route}\n`);
+    lines.push("| width | scheme | reduced | doc overflow | overflow | clipped | hidden | tap <44 | soft img | motion | console | verdict |");
+    lines.push("| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |");
+    for (const r of rows) {
+      const x = r.result;
+      if (x.error) {
+        lines.push(`| ${r.width} | ${r.scheme} | ${r.reduced} | error: ${x.error} |||||||||`);
+        continue;
+      }
+      const hyd = hydrationErrors(x.consoleErrors).length;
+      const docOver = x.document.scrollWidth > x.document.clientWidth + 1 ? `❌ ${x.document.scrollWidth}/${x.document.clientWidth}` : "✅";
+      const n = (k, count) => {
+        if (!baseline) return String(count);
+        const fresh = (r.newKeys || new Set()).size && [...r.newKeys].filter((s) => s.startsWith(`${k}|`)).length;
+        return fresh ? `${count} (${fresh} new)` : String(count);
+      };
+      const f = x.fails;
+      const bad = f.overflow + f.clipped + f.hidden + f.images + f.motion + f.overlays + hyd;
+      const verdict = bad ? "❌" : f.targets || x.images.length || x.clipped.length ? "⚠️" : "✅";
+      // Each probe cell carries its own mark: ❌ a defect to triage, ⚠️ worth a look, ✅ clean.
+      const mark = (fail, warn) => (fail ? "❌ " : warn ? "⚠️ " : "✅ ");
+      const intended = x.clipped.length - f.clipped;
+      lines.push(
+        `| ${r.width} | ${r.scheme} | ${r.reduced} | ${docOver} | ${mark(f.overflow)}${n("overflow", x.overflow.length)} | ${mark(f.clipped, intended)}${n("clipped", f.clipped)}${intended ? ` (+${intended} intended)` : ""} | ${mark(f.hidden)}${n("hidden", f.hidden)} | ${mark(0, f.targets)}${n("targets", f.targets)} | ${mark(f.images, x.images.length)}${n("images", x.images.length)} | ${r.reduced === "on" ? `${mark(f.motion)}${n("motion", f.motion)}` : "—"} | ${mark(f.overlays + hyd, x.consoleErrors.length)}${x.consoleErrors.length}${hyd ? ` (${hyd} hydration)` : ""} | ${verdict} |`,
+      );
+    }
+    const details = [];
+    for (const r of rows) {
+      const x = r.result;
+      if (x.error) continue;
+      for (const k of kinds) {
+        for (const item of x[k]) {
+          const fresh = r.newKeys && r.newKeys.has(key(k, item)) ? " **new**" : "";
+          const extra = Object.entries(item)
+            .filter(([p]) => !["selector", "box", "text"].includes(p))
+            .map(([p, v]) => `${p}=${v}`)
+            .join(", ");
+          details.push(`- ${r.width}px ${r.scheme}${r.reduced === "on" ? " reduced" : ""} · ${k}${fresh} · \`${item.selector}\` · ${extra}${item.text ? ` · "${item.text}"` : ""}`);
+        }
+      }
+      if (x.warning) details.push(`- ${r.width}px · warning · ${x.warning}`);
+      for (const e of x.consoleErrors) details.push(`- ${r.width}px · console · ${e}`);
+      for (const o of x.overlays) details.push(`- ${r.width}px · overlay · ${o}`);
+    }
+    if (details.length) lines.push("", "Findings:", "", ...details);
+  }
+  return lines.join("\n");
+}
+
+// One element, whatever the probes found: for comparing a built section with its mockup.
+async function capture(page, r, selector, dir) {
+  await mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${r.route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "home"}-${r.width}-${r.scheme}${r.reduced === "on" ? "-reduced" : ""}-capture.png`);
+  if (!(await page.locator(selector).count())) return `no element matches ${selector} here (a twin may need its own selector: "#pillars, #standard")`;
+  try {
+    await page.locator(selector).first().screenshot({ path: file, timeout: 5000 });
+    return file;
+  } catch (e) {
+    return `not captured (${String(e.message || e).split("\n")[0]})`;
+  }
+}
+
+// Screenshots of up to six failing elements of one run, taken while the page is still on it.
+let shotCount = 0;
+async function shoot(page, r, dir) {
+  const x = r.result;
+  if (x.error || !x.overflow) return [];
+  await mkdir(dir, { recursive: true });
+  const failing = [
+    ...x.overflow.map((i) => ["overflow", i]),
+    ...x.clipped.filter((c) => !c.intended).map((i) => ["clipped", i]),
+    ...x.hidden.map((i) => ["hidden", i]),
+    ...x.images.filter((i) => i.severity === "fail").map((i) => ["images", i]),
+  ].slice(0, 6);
+  const saved = [];
+  for (const [k, item] of failing) {
+    const slug = `${r.route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "home"}-${r.width}-${r.scheme}${r.reduced === "on" ? "-reduced" : ""}-${k}-${shotCount++}.png`;
+    const file = path.join(dir, slug);
+    try {
+      await page.locator(item.selector).first().scrollIntoViewIfNeeded({ timeout: 3000 });
+      await page.screenshot({ path: file });
+      saved.push(file);
+    } catch {}
+  }
+  return saved;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const scriptPath = args.script ? path.resolve(args.script) : path.join(here, "probes.js");
+  const script = await readFile(scriptPath, "utf8");
+  const isProbes = path.basename(scriptPath) === "probes.js";
+  const pw = await loadPlaywright();
+  const chromium = pw.chromium || (pw.default && pw.default.chromium);
+  const session = await launch(chromium);
+  try {
+    const results = await runMatrix(session, args.base, args, script, isProbes && args.shots);
+    if (args.baseline && isProbes) {
+      const base = await runMatrix(session, args.baseline, args, script);
+      for (const r of results) {
+        const twin = base.find((b) => b.route === r.route && b.width === r.width && b.reduced === r.reduced && b.scheme === r.scheme);
+        const known = new Set();
+        if (twin && !twin.result.error) for (const k of kinds) for (const i of twin.result[k]) known.add(key(k, i));
+        r.newKeys = new Set();
+        if (!r.result.error) for (const k of kinds) for (const i of r.result[k]) if (!known.has(key(k, i))) r.newKeys.add(key(k, i));
+      }
+      // Not one finding in common: production is probably not this codebase yet (another builder, an old site).
+      const found = results.reduce((n, r) => n + (r.result.error ? 0 : kinds.reduce((m, k) => m + r.result[k].length, 0)), 0);
+      const fresh = results.reduce((n, r) => n + (r.newKeys ? r.newKeys.size : 0), 0);
+      const baseFound = base.reduce((n, b) => n + (b.result.error ? 0 : kinds.reduce((m, k) => m + b.result[k].length, 0)), 0);
+      if (found >= 5 && fresh === found && baseFound) {
+        console.error(`No finding matches ${args.baseline}: is production running this codebase? If not, "new" means nothing here.`);
+      }
+    }
+    const plain = results.map(({ newKeys, shots, capture: _capture, ...rest }) => ({ ...rest, newFindings: newKeys ? [...newKeys] : undefined }));
+    if (args.json) await writeFile(args.json, JSON.stringify(plain, null, 2));
+    if (isProbes) {
+      console.log(table(results, Boolean(args.baseline)));
+      if (args.capture) {
+        console.log(`\nCaptures of ${args.capture} (${results.length}):`);
+        for (const r of results) console.log(`- ${r.route} ${r.width}px ${r.scheme}${r.reduced === "on" ? " reduced" : ""}: ${r.capture}`);
+      }
+      if (args.shots) {
+        const saved = results.flatMap((r) => r.shots || []);
+        console.log(`\nScreenshots of failures (${saved.length}):`);
+        for (const s of saved) console.log(`- ${s}`);
+      }
+    } else {
+      console.log(JSON.stringify(plain, null, 2));
+    }
+  } finally {
+    await session.close();
+  }
+}
+
+main().catch((e) => {
+  console.error(String(e.message || e));
+  process.exit(1);
+});
