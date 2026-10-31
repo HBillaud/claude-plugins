@@ -103,17 +103,25 @@ export const register: Register = (on, options) => {
       </Text>
     )
     // A slot gives way to a narrow band, value and meta alike; a fixed word keeps its cells.
+    // Each Box of a row is held to one line: a graphical surface wraps a row Box
+    // unless told not to, and breaks the line before it shrinks anything, so a
+    // long value would drop below its label, a gap's height down, instead of giving way.
     const slot = (segments: readonly Segment[], isMeta: boolean, key: string): RenderElement => (
-      <Box key={key} gap={1} flexShrink={1}>
+      <Box key={key} gap={1} flexShrink={1} flexWrap="nowrap">
         {words(segments).map((run, n) => (
-          <Box key={`${key}${n}`} flexShrink={run.every(s => s.isFixed === true) ? 0 : 1}>
+          <Box key={`${key}${n}`} flexShrink={run.every(s => s.isFixed === true) ? 0 : 1} flexWrap="nowrap">
             {run.map((s, m) => text(s, isMeta, `${key}${n}.${m}`))}
           </Box>
         ))}
       </Box>
     )
+    // The terminal lays the band out in cells, a row as wide as the band's count
+    // of them. A graphical surface stretches the row across the band itself, and
+    // its count can fall short: VS Code counts cells as wide as a box-drawing
+    // rule, wider than the `ch` it draws a width in, so the row would stop early.
+    const width = e.surface === 'terminal' ? e.props.bodyColumns : undefined
     const drawRow = (row: Row): RenderElement => (
-      <Box key={row.id} gap={1} paddingLeft={FOOTER_INDENT} width={e.props.bodyColumns}>
+      <Box key={row.id} gap={1} flexWrap="nowrap" paddingLeft={FOOTER_INDENT} width={width}>
         <Text color={row.glyph.color}>{row.glyph.text}</Text>
         <Box width={LABEL_COLUMNS} flexShrink={0}>
           <Text dimColor>{row.label}</Text>
