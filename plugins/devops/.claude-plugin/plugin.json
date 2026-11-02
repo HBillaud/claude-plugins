@@ -1,0 +1,6 @@
+{
+  "name": "devops",
+  "version": "0.1.0",
+  "description": "Engineering operations workflows: take a tracked issue from report to verified fix, with the root cause proved before any code changes",
+  "author": { "name": "Hadrien" }
+}
