@@ -232,6 +232,15 @@ export const rowIds = (n: unknown): string[] => {
   return kids(node).flatMap(rowIds)
 }
 
+/** Every Box under `n`, `n` among them, that lays two or more elements side by side. */
+export const sideBySide = (n: unknown): Node[] => {
+  if (n === null || typeof n !== 'object') return []
+  const node = n as Node
+  const elements = kids(node).filter(c => c !== null && typeof c === 'object')
+  const isSideBySide = node.type === 'Box' && (node.props?.['flexDirection'] ?? 'row') === 'row' && elements.length > 1
+  return [...(isSideBySide ? [node] : []), ...elements.flatMap(sideBySide)]
+}
+
 /** The first Text under `n` that draws exactly `text`. */
 export const textIn = (n: unknown, text: string): Node | undefined => {
   if (n === null || typeof n !== 'object') return undefined

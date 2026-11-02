@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { BAND, MINUTE, PLUGIN, answered, bandTexts, engine, fiveHour, nodeOf, rowIds, rowTexts } from './engine'
+import { BAND, MINUTE, PLUGIN, answered, bandTexts, engine, fiveHour, nodeOf, rowIds, rowTexts, sideBySide } from './engine'
 
 const COMPOSER = { kind: 'composer' } as const
 
@@ -23,6 +23,32 @@ test('draws every row in one order, task, repo, usage, replay, on both band surf
     for (const [id, label] of [['task', 'task'], ['repo', 'repo'], ['usage', 'usage'], ['replay', 'replay']] as const) {
       expect((await rowTexts(ui, id))[1]).toBe(label)
       expect(nodeOf(drawn, id)).toMatchObject({ type: 'Box', props: { paddingLeft: 2, gap: 1 } })
+    }
+    await ui.unmount()
+  }
+})
+
+test('keeps each row to one line on every surface, and sizes it in cells on the terminal alone', async ($, on) => {
+  // A graphical surface wraps a row Box it is not told to keep to one line, so
+  // a task too long to sit beside its label would drop onto a line of its own.
+  const w = engine(on, { root: '/acme', repoRoot: '/acme', branch: 'fix/login-timeout', sha: 'abc1234', changed: 2, ahead: 1, rateLimits: [fiveHour(42, 133 * MINUTE)] })
+  w.replies.push([/flaky/, answered('Stabilize the flaky replay test that times out on slow CI runners')])
+  await $.session.start({ cwd: w.root, surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'the replay test is flaky on slow CI runners', wait: false, origin: COMPOSER })
+  await w.clock.settle()
+  await $.turn.start({ text: 'stabilize', turnId: 't1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/acme/a.js', old_string: 'sleep(10)', new_string: 'await ready()' })
+  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, reason: 'answer' })
+
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
+    const drawn = await ui.drawn()
+    expect(rowIds(drawn)).toEqual(['task', 'repo', 'usage', 'replay'])
+    for (const id of rowIds(drawn)) {
+      const lines = sideBySide(nodeOf(drawn, id))
+      expect(lines.length).toBeGreaterThan(0)
+      for (const box of lines) expect(box.props?.['flexWrap']).toBe('nowrap')
+      expect(nodeOf(drawn, id)?.props?.['width']).toBe(surface === 'terminal' ? BAND.props.bodyColumns : undefined)
     }
     await ui.unmount()
   }
