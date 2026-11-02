@@ -39,6 +39,13 @@
       "description": "Design workflows for client sites: section redesigns from mockups to an end-to-end build, responsive and motion QA in the browser, type-scale audits across routes, and hero media prep",
       "category": "skill",
       "keywords": ["design", "mockups", "responsive", "motion", "typography", "video", "web-agency"]
+    },
+    {
+      "name": "devops",
+      "source": "./plugins/devops",
+      "description": "Engineering operations workflows: take a tracked issue from report to verified fix, with the root cause proved before any code changes",
+      "category": "skill",
+      "keywords": ["issues", "debugging", "root-cause", "bugfix", "regression-tests"]
     }
   ]
 }
