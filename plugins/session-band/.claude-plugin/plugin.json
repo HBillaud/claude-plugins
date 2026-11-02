@@ -1,6 +1,6 @@
 {
   "name": "session-band",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One band above the prompt: what the session works on, where, how much of the session limit is used, and a replay of the last turn's edits",
   "author": { "name": "Hadrien" },
   "types": "./types/index.d.ts",
