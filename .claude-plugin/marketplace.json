@@ -13,39 +13,18 @@
       "keywords": ["band", "usage", "replay", "ui"]
     },
     {
-      "name": "worktrees",
-      "source": "./plugins/worktrees",
-      "description": "Plant an isolated git worktree for a task, and safely prune the ones you no longer need",
-      "category": "skill",
-      "keywords": ["git", "worktree"]
-    },
-    {
       "name": "web-agency",
       "source": "./plugins/web-agency",
-      "description": "Web agency workflows for client sites and web apps: DNS and email deliverability audits, launch checks, and domain verification",
+      "description": "Web agency workflows for client sites: DNS and email deliverability audits, section redesigns from mockups to an end-to-end build, responsive and motion QA in the browser, type-scale audits across routes, and hero media prep",
       "category": "skill",
-      "keywords": ["dns", "email", "deliverability", "dmarc", "dkim", "spf", "vercel", "web-agency"]
-    },
-    {
-      "name": "agent-config",
-      "source": "./plugins/agent-config",
-      "description": "Refactor a repository's coding-agent configuration into one canonical source with thin per-agent adapters, measured and held by a CI guard",
-      "category": "skill",
-      "keywords": ["agents-md", "claude-md", "skills", "codex", "refactor"]
-    },
-    {
-      "name": "design-studio",
-      "source": "./plugins/design-studio",
-      "description": "Design workflows for client sites: section redesigns from mockups to an end-to-end build, responsive and motion QA in the browser, type-scale audits across routes, and hero media prep",
-      "category": "skill",
-      "keywords": ["design", "mockups", "responsive", "motion", "typography", "video", "web-agency"]
+      "keywords": ["dns", "email", "deliverability", "dmarc", "dkim", "spf", "vercel", "design", "mockups", "responsive", "motion", "typography", "video", "web-agency"]
     },
     {
       "name": "devops",
       "source": "./plugins/devops",
-      "description": "Engineering operations workflows: take a tracked issue from report to verified fix, with the root cause proved before any code changes",
+      "description": "Engineering operations workflows: take a tracked issue from report to verified fix, plant and safely prune git worktrees, and refactor a repository's coding-agent configuration into one canonical source held by a CI guard",
       "category": "skill",
-      "keywords": ["issues", "debugging", "root-cause", "bugfix", "regression-tests"]
+      "keywords": ["issues", "debugging", "root-cause", "bugfix", "regression-tests", "git", "worktree", "agents-md", "claude-md", "skills", "codex", "refactor"]
     }
   ]
 }

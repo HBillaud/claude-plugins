@@ -1,5 +1,5 @@
 ---
-tags: [agent-config]
+tags: [devops, canonical-agent-config]
 max_turns: 250
 timeout_seconds: 3600
 allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash]

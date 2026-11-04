@@ -1,5 +1,5 @@
 ---
-tags: [design-studio, prep-hero-media]
+tags: [web-agency, prep-hero-media]
 max_turns: 150
 timeout_seconds: 2400
 allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash]
