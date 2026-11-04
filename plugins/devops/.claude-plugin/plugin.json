@@ -1,6 +1,6 @@
 {
   "name": "devops",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Engineering operations workflows: take a tracked issue from report to verified fix, plant and safely prune git worktrees, and refactor a repository's coding-agent configuration into one canonical source held by a CI guard",
   "author": { "name": "Hadrien" }
 }

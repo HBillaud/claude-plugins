@@ -1,155 +1,116 @@
 ---
 name: prune-trees
-description: Safely delete the current project's `.claude/worktrees/` checkouts, keeping only the ones named as arguments — audits each for uncommitted work, dirty submodules, stashes, and unpushed commits before removing anything, never deletes branches, then prunes git's stale bookkeeping and reports reclaimed disk. TRIGGER when the user asks to clean up / prune / remove agent worktrees, says "/devops:prune-trees" (or "/prune-trees"), or asks to reclaim the disk that worktrees are holding.
+description: Safely delete the current project's `.claude/worktrees/` checkouts with a script that fails closed. With no arguments it only shows the audit; `--keep`, `--only` and `--merged` choose what goes. Blocks on uncommitted work, ignored files found nowhere else, commits only a submodule holds, detached commits, locks, running processes and unverifiable state. Never deletes branches, and reports reclaimed disk. TRIGGER when the user asks to clean up / prune / remove agent worktrees, says "/devops:prune-trees" (or "/prune-trees"), or asks to reclaim the disk that worktrees are holding.
 user-invocable: true
 allowed-tools: Bash, Glob, Grep, Read
 ---
 
 # Prune Agent Worktrees
 
-Delete the throwaway worktrees under the invoking project's `.claude/worktrees/`, keeping only
-the ones the user names. Agent worktrees each carry a full build tree, so a stale set routinely
-holds tens of gigabytes — but they also carry the only copy of some work, so **every deletion is
-gated behind an audit, not a hope**.
+Delete the throwaway worktrees under the repository's `.claude/worktrees/`. Agent worktrees each carry
+a full build tree, so a stale set routinely holds tens of gigabytes, but they can also carry the only
+copy of some work.
 
-The contract: no uncommitted work, no dirty submodule, no stash, and no unrecoverable commit is
-ever destroyed. Anything that fails the audit is skipped and reported, not forced.
+The contract: `scripts/prune_worktrees.py` decides what is safe, and anything it blocks stays on disk
+and gets reported. Do not audit by hand, and do not delete anything the script did not delete. A check
+that could not run counts as a failed check, because a failed git command prints nothing, which looks
+exactly like a clean tree.
 
 ## Scope
 
-Operate **only** on worktrees whose path is inside `<repo-top-level>/.claude/worktrees/`.
-
-Resolve the repo root with `git rev-parse --show-toplevel` from the invoking directory. Do not
-touch anything else `git worktree list` prints — sibling checkouts (`../<repo>-<topic>`),
-scratchpad worktrees under `/tmp` or `/private/tmp`, or the primary checkout are all out of scope
-even when they look abandoned. If the user explicitly names one of those, confirm before removing it.
-
-If `.claude/worktrees/` does not exist or is empty, say so and stop.
+Only direct children of `<primary-checkout>/.claude/worktrees/`. The script finds the primary checkout
+itself, so it works from inside a worktree too. Sibling checkouts (`../<repo>-<topic>`), worktrees under
+`/tmp`, and the primary checkout are out of scope even when they look abandoned. If the user explicitly
+names one of those, confirm before removing it.
 
 ## Behavior
 
-### 1. Resolve the keep-list
+### 1. Read the selection
 
-`$ARGUMENTS` names the worktrees to **keep** (by directory name, matched case-insensitively; accept
-a bare name, a path, or a comma/space-separated list).
+| `$ARGUMENTS` | Selects | Then |
+| --- | --- | --- |
+| nothing | nothing | Show the audit and ask what to remove. Stop there |
+| `--keep a b` | every worktree except these | Remove |
+| `--only a b` | just these | Remove |
+| `--merged` (optionally with `--keep a`) | worktrees whose work is merged | Remove |
+| bare names (`/devops:prune-trees foo`) | nothing | Show the audit and ask whether they mean keep or only. Do not guess: the two readings delete opposite sets |
 
-- No arguments: enumerate the worktrees with their branch, HEAD, and size, then **ask** which to
-  keep. Never assume "keep none".
-- An argument matching nothing: stop and report the mismatch rather than deleting a superset of
-  what the user meant.
+Translate a plain request the same way: "clean up everything except foo" is `--keep foo`, "remove foo" is
+`--only foo`, "remove the merged ones" is `--merged`. If the request does not say, it is the first row.
 
-### 2. Enumerate
+### 2. Audit
 
-```bash
-git worktree list
-ls -la "$(git rev-parse --show-toplevel)/.claude/worktrees/"
-du -sh "$(git rev-parse --show-toplevel)"/.claude/worktrees/*
-du -sh "$(git rev-parse --show-toplevel)/.claude/worktrees"
-```
-
-Record the pre-removal total — it is the baseline for the reclaimed-disk figure. Note which entries
-`git worktree list` marks `prunable` (their directory is already gone; they need only bookkeeping).
-
-### 3. Audit every removal candidate
-
-Run all of these. A candidate is removable only when all five pass.
+Refresh remote-tracking refs first, so "merged" and "ahead" mean something, then audit. This step changes
+nothing else:
 
 ```bash
-d=.claude/worktrees/<name>
-git -C "$d" status --porcelain                                   # must be empty
-git -C "$d" symbolic-ref --short -q HEAD || echo '(detached)'
-git -C "$d" rev-parse --abbrev-ref --symbolic-full-name '@{u}'   # upstream, if any
-base=$(git symbolic-ref --short -q refs/remotes/origin/HEAD) ||    # remote default branch
-  for b in origin/main origin/master; do git rev-parse -q --verify "$b" >/dev/null && base=$b && break; done
-git -C "$d" log --oneline "$base"..HEAD                          # commits not in the default branch
-git -C "$d" submodule foreach --quiet \
-  'echo "-- $sm_path @ $(git rev-parse --short HEAD)"; git status --porcelain; git stash list'
-git -C "$d" stash list
+git fetch --quiet origin
+python3 <skill-dir>/scripts/prune_worktrees.py audit [--keep ... | --only ... | --merged]
 ```
 
-1. **Working tree clean** — `status --porcelain` empty.
-2. **Submodules clean** — no modifications, no stashes in any submodule.
-3. **No stashes** in the worktree itself.
-4. **Commits are recoverable.** For an attached branch, compare against its remote:
-   ```bash
-   git rev-list --left-right --count "<branch>...origin/<branch>"
-   ```
-   `0  0` means fully pushed. A branch that is ahead, or has no remote branch at all, is still
-   **safe to remove** — removing a worktree does not delete its branch — but say so explicitly in
-   the report so the user knows the local branch is the only copy.
-5. **Detached HEAD is contained somewhere.** This is the one case that can truly orphan commits:
-   ```bash
-   git branch -a --contains <sha>
-   ```
-   If some other ref (ideally a remote one) contains the commit, it survives. If **nothing** does,
-   do not remove it — report it and offer to branch the commit first.
+Exit 2 means nothing can safely be done, such as an unknown name or no repository. Report it and stop.
 
-Fetching is optional and read-only; if remote-tracking refs look stale, `git fetch --quiet origin`
-before step 4 so the ahead/behind counts mean something.
+### 3. State the verdict
 
-### 4. State the verdict before deleting
+Say what will be removed, what stays, and why, before removing anything. The invocation authorizes the
+removal of what passes, so proceed without asking unless step 4 applies.
 
-Summarize what will be removed, what will be kept, and every audit fact that matters (unpushed
-branches, detached HEADs and what contains them, anything skipped). Then proceed — the invocation
-is the authorization. Only stop for confirmation when a candidate **fails** the audit and the user
-would have to choose between losing work and keeping the worktree.
+### 4. Handle what the audit blocks
+
+Never work around a blocker: no `--force`, no `git worktree unlock`, no `rm -rf`. Report it, and say what
+would clear it:
+
+| Blocker | What it means | What clears it |
+| --- | --- | --- |
+| `dirty` | Uncommitted or untracked files | Commit or discard them |
+| `ignored-files` | Ignored files, like `.env.local`, found nowhere else | Save them, or see below |
+| `locked` | Claude Code locks a running agent's worktree, so something may be using it. `-p` runs leave their lock until a later session's sweep | Wait for the agent or the sweep. If the user set the lock, `git worktree unlock` is theirs to run |
+| `in-use`, `current-directory` | A process, or this session, is running inside it | Stop it, or leave the worktree first |
+| `orphan-commits` | Detached commits that nothing else contains | Offer to branch them |
+| `submodule-commits`, `submodule-dirty`, `submodule-stash`, `submodule-ignored` | Work in a submodule, whose git directory is deleted with the worktree | Push it, or tell the user it will be lost |
+| `in-progress` | An unfinished merge, rebase or similar | Finish or abort it |
+| `contains-worktree` | Another worktree is nested inside | Deal with the inner one first |
+| `not-registered` | Git does not know the directory | Inspect it with the user |
+| `could-not-verify` | A git command failed | Report the error |
+
+**Ignored files** are the one blocker the user can release. Show them the list, and only after they agree
+that those files may be lost, add `--accept-ignored <name>` for that worktree. Do not offer this for a
+file that looks like a credential without saying so.
 
 ### 5. Remove
 
-Try git's own removal first:
-
 ```bash
-git worktree remove .claude/worktrees/<name>
+python3 <skill-dir>/scripts/prune_worktrees.py remove [--keep ... | --only ... | --merged] [--accept-ignored ...]
 ```
 
-**Expect this to fail on any repo with submodules** — git refuses with
-`fatal: working trees containing submodules cannot be moved or removed`. That refusal is a blanket
-structural rule, not a signal that this particular worktree is unsafe; the audit in step 3 is what
-establishes safety. So for those, remove the directory directly and let git reconcile:
+It audits each candidate again immediately before deleting it, uses `git worktree remove` without
+`--force`, falls back to deleting the directory only for git's blanket refusal on worktrees with
+submodules, prunes git's bookkeeping, and confirms each branch still exists. Exit 1 means something was
+blocked or failed, and the rest was still removed.
 
-```bash
-rm -rf .claude/worktrees/<name>
-```
+`git worktree prune` also clears registrations left by earlier sessions. That is expected, so mention it
+in one line rather than presenting it as part of the requested deletion.
 
-Never pass `--force` to `git worktree remove` to get around a dirty tree — a dirty tree means the
-audit failed, and the answer is to skip it.
-
-### 6. Prune bookkeeping and verify
-
-```bash
-git worktree prune -v
-git worktree list
-ls -la "$(git rev-parse --show-toplevel)/.claude/worktrees/"
-du -sh "$(git rev-parse --show-toplevel)/.claude/worktrees"
-```
-
-`prune -v` also clears unrelated stale registrations (worktrees whose directories vanished with an
-earlier session). That is expected and harmless — mention it in one line rather than presenting it
-as part of the requested deletion.
-
-Then confirm the branches outlived their checkouts:
-
-```bash
-git rev-parse --short -q <branch>   # for each removed worktree's branch
-```
-
-### 7. Report
+### 6. Report
 
 - A table of what was removed: worktree, branch or detached SHA, size.
-- Reclaimed disk as `before → after`.
-- The audit facts that carry forward: any branch whose only copy is now local (name it, and suggest
-  pushing), any detached commit's containing branch, anything skipped and why.
-- Confirmation that all branches still exist and only the checkouts are gone.
-- Any surprising repo-state change noticed in passing (e.g. the primary checkout sitting on a
-  different branch than expected, a concurrent session's worktree) — one line, flagged as
-  *not* something this run did.
+- Reclaimed disk as `before -> after`.
+- What was blocked, why, and what would clear it.
+- Any branch whose only copy is now local: name it and suggest pushing.
+- Confirmation that the branches still exist and only the checkouts are gone.
+- Anything surprising noticed in passing, like a concurrent session's worktree, flagged as *not* something
+  this run did.
 
 ## Notes
 
-- **Never delete branches.** The ask is about checkouts and disk. Removing a worktree leaves its
-  branch, its commits, and its reflog intact; deleting the branch is a separate, destructive act
-  that requires its own explicit request.
-- Do not run builds, tests, or formatters here — this skill only inspects and deletes.
-- The size figures come from `du`, so they include build trees and other ignored files. That bulk is
-  exactly what makes pruning worthwhile, and also why `git worktree remove` alone would not reclaim
-  it if the directory were left behind.
+- **Never delete branches.** Removing a worktree leaves its branch, commits and reflog intact. Deleting a
+  branch is a separate, destructive act that needs its own explicit request.
+- **Stashes do not block.** They belong to the whole repository and survive a removal, so the script only
+  notes the ones made on the worktree's branch. Submodule stashes are the exception.
+- **`--merged` stays on the safe side.** It skips a worktree that never had a commit, because being
+  contained in the default branch is not the same as being finished. It finds squash merges through `gh`,
+  matching the pull request's head SHA, so a commit added after the merge keeps the worktree. Without `gh`
+  those stay as `unmerged`.
+- Do not run builds, tests or formatters here. This skill only inspects and deletes.
+- The size figures come from `du`, so they include build trees and other ignored files.
+- `scripts/test_prune_worktrees.py` is the script's test suite, run with `python3`.

@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: plant-from-inside-worktree
+expected_outcome: |
+  Working from inside the add-search worktree, the agent plants acme/.claude/worktrees/add-login-retry,
+  directly under the primary checkout and not nested inside add-search. Its branch follows the repository's
+  feature/ convention and starts from the fetched origin/main, so it holds the remote-only commit and not
+  the unmerged search work. The agent adds .claude/worktrees/ to the local exclude file, not to a committed
+  .gitignore, and starts no work on the task.
+runs: 1
+context:
+  scaffold_script: place-files.sh
