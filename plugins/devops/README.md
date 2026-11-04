@@ -44,7 +44,7 @@ Four skills for engineering operations: taking a tracked issue from report to ve
 | `evals/plant-from-inside-worktree/` | an end-to-end case for `plant-tree`: planting from inside a worktree, with a stale local main and a branch naming convention to follow |
 | `evals/messy-repo-to-canonical/` | an end-to-end case for `canonical-agent-config`: a scaffold builds a messy repository, the agent migrates it, nine graders check the result |
 
-The `canonical-agent-config` and `prune-trees` scripts need Python 3.9 or later and git. `prune-trees` also uses `lsof` to spot processes running inside a worktree and `gh` to spot squash merges, and says so when either is missing. The skill follows the Agent Skills format, so its directory also works copied into a repository's `.agents/skills/` for agents other than Claude Code.
+The `canonical-agent-config` and `prune-trees` scripts need Python 3.9 or later and git; `prune-trees` needs git 2.31 or later and refuses to run on anything older, because earlier versions do not report locks. It also uses `lsof` to spot processes running inside a worktree and `gh` to spot squash merges, and says so when either is missing. The skill follows the Agent Skills format, so its directory also works copied into a repository's `.agents/skills/` for agents other than Claude Code.
 
 To re-run a case after changing its skill, from this directory. Without `--case`, the command runs them all, and `messy-repo-to-canonical` is one full migration, about half an hour of agent time.
 

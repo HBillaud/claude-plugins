@@ -12,11 +12,14 @@ The audit fails closed. A git command that errors blocks the worktree instead of
 reading as "nothing found", because an empty result from a failed command looks
 exactly like a clean tree.
 
-Exit codes: 0 done; 1 a candidate is blocked or could not be removed; 2 nothing
-was done (not a repository, an unknown name, or no way to decide what is merged).
+Exit codes: `audit` exits 0 whatever it finds, since blockers are its output.
+`remove` exits 0 when every candidate went, and 1 when one was blocked or could not
+be removed. Both exit 2 when nothing was done (not a repository, git too old, an
+unknown name, or no way to decide what is merged).
 
-Python 3.9+, git 2.20+. `lsof` and `gh` are optional: without `lsof` the check for
-other processes is skipped and reported; without `gh` squash merges go undetected.
+Python 3.9+, git 2.31+, which is when `git worktree list --porcelain` began reporting
+locks. `lsof` and `gh` are optional: without `lsof` the check for other processes is
+skipped and reported; without `gh` squash merges go undetected.
 """
 
 from __future__ import annotations
@@ -68,6 +71,7 @@ IN_PROGRESS = {
 SUBMODULE_REFUSAL = "working trees containing submodules cannot be moved or removed"
 FRESH_REFLOG_PREFIXES = ("branch: Created from", "Branch: renamed")
 LISTED = 5  # paths named in one blocker before the rest are counted
+MINIMUM_GIT = (2, 31)
 
 
 class Unverified(Exception):
@@ -86,18 +90,19 @@ def git_env() -> dict:
     return env
 
 
-def run_git(cwd, *args) -> subprocess.CompletedProcess:
+def run_git(cwd, *args, stdin=None) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", "-C", str(cwd), *args],
         capture_output=True,
         text=True,
         errors="replace",
         env=git_env(),
+        input=stdin,
     )
 
 
-def must(cwd, *args) -> str:
-    result = run_git(cwd, *args)
+def must(cwd, *args, stdin=None) -> str:
+    result = run_git(cwd, *args, stdin=stdin)
     if result.returncode != 0:
         reason = result.stderr.strip() or f"exit {result.returncode}"
         raise Unverified(f"git {' '.join(args)}: {reason}")
@@ -127,6 +132,17 @@ def parse_worktree_list(text: str) -> list:
     for item in entries:
         item["worktree"] = real(item["worktree"])
     return entries
+
+
+def require_git_version() -> None:
+    try:
+        output = subprocess.run(["git", "--version"], capture_output=True, text=True, env=git_env()).stdout
+    except OSError as exc:
+        raise Stop(f"git could not run: {exc}")
+    found = re.search(r"(\d+)\.(\d+)", output)
+    if not found or tuple(map(int, found.groups())) < MINIMUM_GIT:
+        needed = ".".join(map(str, MINIMUM_GIT))
+        raise Stop(f"needs git {needed} or later to see worktree locks, and found: {output.strip() or 'nothing'}")
 
 
 def list_worktrees(start) -> list:
@@ -170,6 +186,10 @@ def process_cwds():
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
+    # lsof always sees itself, so no output at all means it failed. A non-zero exit alone
+    # does not: lsof also exits 1 when it could only read part of the process table.
+    if not result.stdout.strip():
+        return None
     found, pid = [], None
     for line in result.stdout.splitlines():
         if line.startswith("p"):
@@ -186,14 +206,14 @@ def named(paths: list) -> str:
 
 def undisposable_ignored(directory, primary) -> list:
     """Ignored paths in `directory` that a removal would lose for good."""
-    output = must(directory, "status", "--porcelain", "-z", "--ignored=matching")
+    output = must(directory, "status", "--porcelain", "-z", "--ignored=matching", "--untracked-files=normal")
     lost = []
     for record in output.split("\0"):
         if not record.startswith("!! "):
             continue
         relative = record[3:].rstrip("/")
-        parts = Path(relative).parts
-        if any(p in DISPOSABLE_NAMES for p in parts) or relative.endswith(".pyc"):
+        # The path itself, not its parents: .env.local inside a tracked build/ is not build output.
+        if Path(relative).name in DISPOSABLE_NAMES or relative.endswith(".pyc"):
             continue
         ours, theirs = Path(directory) / relative, Path(primary) / relative
         if (
@@ -206,34 +226,109 @@ def undisposable_ignored(directory, primary) -> list:
     return lost
 
 
+def changed_paths(directory) -> list:
+    """Modified and untracked paths, whatever status.showUntrackedFiles says."""
+    records = must(directory, "status", "--porcelain", "-z", "--untracked-files=normal").split("\0")
+    paths, is_source = [], False
+    for record in records:
+        if is_source:  # with -z, a rename or copy is followed by a bare record naming its source
+            is_source = False
+        elif record:
+            paths.append(record[3:])
+            is_source = record[0] in "RC" or record[1] in "RC"
+    return paths
+
+
+def reflog_only_commits(directory, *options, surviving_reflogs=(), reachable=("--remotes",)) -> list:
+    """Commits that only this checkout's HEAD reflog still reaches, which the removal deletes."""
+    entries = must(directory, *options, "log", "-g", "--format=%H%x00%gs", "HEAD").splitlines()
+    # A rebase's intermediate commits are replaced by its result, so they are not lost work.
+    tips = {e.split("\0")[0] for e in entries if not e.split("\0", 1)[-1].startswith("rebase")}
+    if surviving_reflogs:
+        tips -= set(must(directory, *options, "log", "-g", "--format=%H", *surviving_reflogs).split())
+    if not tips:
+        return []
+    found = must(directory, *options, "rev-list", "--stdin", "--not", "HEAD", *reachable, stdin="\n".join(sorted(tips)) + "\n")
+    return found.split()
+
+
+def hidden_from_status(directory) -> list:
+    """Files on disk that git is told not to check, so neither status nor git worktree remove sees edits to them."""
+    hidden = []
+    for record in must(directory, "ls-files", "-v", "-z").split("\0"):
+        tag, relative = record[:1], record[2:]
+        # An absent skip-worktree file is just sparse checkout, with nothing to lose.
+        if (tag == "S" or tag.islower()) and os.path.lexists(os.path.join(directory, relative)):
+            hidden.append(relative)
+    return hidden
+
+
+def gitlinks(directory) -> list:
+    """Submodule paths from the index, read with -z because a path can hold spaces."""
+    output = must(directory, "ls-files", "--stage", "-z")
+    return sorted({r.split("\t", 1)[1] for r in output.split("\0") if r.startswith("160000 ")})
+
+
+def audit_submodule_files(directory: str, primary: str, block, prefix: str = "") -> dict:
+    """Check every populated submodule's files. Returns the git directories they use, with their labels."""
+    used = {}
+    for relative in gitlinks(directory):
+        inner = os.path.join(directory, relative)
+        if not os.path.lexists(os.path.join(inner, ".git")):
+            continue  # not populated: any git directory it left is checked by audit_submodules
+        label = os.path.join(prefix, relative)
+        if changed_paths(inner):
+            block("submodule-dirty", f"{label} has uncommitted changes")
+        hidden = hidden_from_status(inner)
+        if hidden:
+            block("submodule-dirty", f"{label} has files git is told not to check: {named(hidden)}")
+        lost = undisposable_ignored(inner, os.path.join(primary, relative))
+        if lost:
+            block("submodule-ignored", f"{label}: {named(lost)}")
+        used[real(must(inner, "rev-parse", "--absolute-git-dir").strip())] = label
+        used.update(audit_submodule_files(inner, os.path.join(primary, relative), block, label))
+    return used
+
+
+def module_git_dirs(path: str) -> dict:
+    """Every git directory under the worktree's admin directory, with its label, active or not."""
+    top = os.path.join(path, must(path, "rev-parse", "--git-path", "modules").strip())
+    if not os.path.isdir(top):
+        return {}
+
+    def fail(error: OSError) -> None:
+        raise Unverified(f"could not read {top}: {error}")
+
+    found = {}
+    for directory, subdirs, files in os.walk(top, onerror=fail):
+        if "HEAD" in files and "objects" in subdirs:
+            found[real(directory)] = os.path.relpath(directory, top)
+            subdirs[:] = [d for d in subdirs if d == "modules"]
+    return found
+
+
 def audit_submodules(path: str, primary: str, block) -> None:
-    for line in must(path, "submodule", "status", "--recursive").splitlines():
-        if not line or line[0] == "-":
-            continue  # not initialised: nothing of it lives here
-        fields = line[1:].split()
-        if len(fields) < 2:
-            raise Unverified(f"unreadable submodule status: {line}")
-        relative = fields[1]
-        directory = os.path.join(path, relative)
-        # A submodule's git directory lives inside the worktree's admin directory, so
-        # unlike a branch of the worktree itself, none of this survives the removal.
-        if must(directory, "status", "--porcelain"):
-            block("submodule-dirty", f"{relative} has uncommitted changes")
-        if must(directory, "stash", "list"):
-            block("submodule-stash", f"{relative} has stashes that exist only here")
-        local = must(directory, "rev-list", "--all", "HEAD", "--not", "--remotes")
+    # git worktree remove refuses whenever modules/ exists, so the rmtree fallback deletes it. Reading
+    # it directly covers what `git submodule status` shows as inactive or no longer lists at all.
+    git_dirs = {**module_git_dirs(path), **audit_submodule_files(path, primary, block)}
+    for git_dir, label in sorted(git_dirs.items()):
+        # --work-tree: once a submodule leaves the branch, core.worktree names a missing directory.
+        options = (f"--git-dir={git_dir}", f"--work-tree={git_dir}")
+        if must(git_dir, *options, "stash", "list"):
+            block("submodule-stash", f"{label} has stashes that exist only here")
+        local = must(git_dir, *options, "rev-list", "--all", "HEAD", "--not", "--remotes")
         if local.strip():
             count = len(local.split())
             block(
                 "submodule-commits",
-                f"{relative} has {count} commit(s) on no remote, and the only copy is here",
+                f"{label} has {count} commit(s) on no remote, and the only copy is here",
             )
-        lost = undisposable_ignored(directory, os.path.join(primary, relative))
+        lost = reflog_only_commits(git_dir, *options)
         if lost:
-            block("submodule-ignored", f"{relative}: {named(lost)}")
+            block("reflog-only-commits", f"{label} has {len(lost)} commit(s) only its reflog reaches")
 
 
-def merge_state(path: str, root: str, branch, head: str, base, ask_github: bool) -> str:
+def merge_state(root: str, branch, head: str, base, ask_github: bool) -> str:
     if not branch or not base:
         return "unknown"
     reflog = run_git(root, "reflog", "show", f"refs/heads/{branch}", "--format=%gs")
@@ -274,7 +369,7 @@ def audit_one(path: str, ctx: dict) -> dict:
         "branch": None,
         "head": None,
         "merge_state": "unknown",
-        "size_kb": size_kb(path),
+        "size_kb": size_kb(path) if ctx.get("measure", True) else None,
         "blockers": [],
         "facts": [],
     }
@@ -305,7 +400,7 @@ def audit_one(path: str, ctx: dict) -> dict:
     if here and inside(here, path):
         block("current-directory", "this session is working inside it")
     if ctx["cwds"] is None:
-        item["facts"].append("other processes not checked (lsof unavailable)")
+        item["facts"].append("other processes not checked (lsof unavailable or failed)")
     else:
         users = sorted({pid for pid, cwd in ctx["cwds"] if inside(cwd, path)})
         if users:
@@ -331,9 +426,13 @@ def audit_one(path: str, ctx: dict) -> dict:
             if os.path.exists(os.path.join(path, found)):
                 block("in-progress", f"a {operation} is unfinished")
 
-        changed = [r for r in must(path, "status", "--porcelain", "-z").split("\0") if r]
+        changed = changed_paths(path)
         if changed:
-            block("dirty", named([r[3:] for r in changed]))
+            block("dirty", named(changed))
+
+        hidden = hidden_from_status(path)
+        if hidden:
+            block("hidden-changes", f"files git is told not to check, which may hold edits: {named(hidden)}")
 
         lost = undisposable_ignored(path, root)
         if lost:
@@ -375,7 +474,18 @@ def audit_one(path: str, ctx: dict) -> dict:
                     "orphan-commits",
                     f"detached at {head[:8]} with {len(orphaned.split())} commit(s) no branch, tag or remote contains",
                 )
-        item["merge_state"] = merge_state(path, root, branch, head, ctx["base"], ctx["ask_github"])
+        lost = reflog_only_commits(
+            path,
+            # Branch reflogs live in the shared git directory, so what they hold survives the removal.
+            surviving_reflogs=("--branches",),
+            reachable=("--branches", "--remotes", "--tags"),
+        )
+        if lost:
+            block(
+                "reflog-only-commits",
+                f"{len(lost)} commit(s) that only this worktree's reflog still reaches, such as {lost[0][:8]}",
+            )
+        item["merge_state"] = merge_state(root, branch, head, ctx["base"], ctx["ask_github"])
     except Unverified as exc:
         block("could-not-verify", str(exc))
     return item
@@ -389,6 +499,7 @@ def split_names(values) -> list:
 
 
 def build_context(args) -> dict:
+    require_git_version()
     entries = list_worktrees(args.repo)
     root = entries[0]["worktree"]  # git always lists the primary checkout first
     base_dir = Path(root) / WORKTREES_DIR
@@ -525,7 +636,10 @@ def command_remove(args) -> int:
         # Audited again here: something may have started using it since the first pass.
         ctx["entries"] = list_worktrees(ctx["root"])
         ctx["cwds"] = process_cwds()
-        fresh = audit_one(item["path"], ctx)
+        # The selection was made on the first pass, so only what could stop the removal is redone.
+        fresh = audit_one(item["path"], dict(ctx, ask_github=False, measure=False))
+        if not fresh["blockers"] and (fresh["head"], fresh["branch"]) != (item["head"], item["branch"]):
+            fresh["blockers"].append({"code": "changed", "detail": "its HEAD moved during this run"})
         if fresh["blockers"]:
             item["blockers"] = fresh["blockers"]
             failed = True
@@ -539,8 +653,21 @@ def command_remove(args) -> int:
         if item["branch"]:
             exists = run_git(ctx["root"], "rev-parse", "-q", "--verify", f"refs/heads/{item['branch']}")
             branches.append(f"{item['branch']} at {exists.stdout.strip()[:8]}" if exists.returncode == 0 else f"{item['branch']} MISSING")
-    stale = stale_registrations(dict(ctx, entries=list_worktrees(ctx["root"])))
-    pruned = must(ctx["root"], "worktree", "prune", "-v").splitlines()
+    # The rmtree fallback leaves a registration for prune to clear, which is not an earlier session's.
+    removed = [i for i in audited if i.get("removed")]
+    removed_paths = {i["path"] for i in removed}
+    stale = [p for p in stale_registrations(dict(ctx, entries=list_worktrees(ctx["root"]))) if p not in removed_paths]
+    # Past this point worktrees are gone, so a failure is reported rather than raised as "nothing was done".
+    # git writes prune -v's lines to stderr.
+    outcome = run_git(ctx["root"], "worktree", "prune", "-v")
+    if outcome.returncode != 0:
+        failed = True
+    removed_ids = tuple(f"worktrees/{i['name']}:" for i in removed)
+    pruned = [
+        line
+        for line in (outcome.stdout + outcome.stderr).splitlines()
+        if not any(marker in line for marker in removed_ids)
+    ]
     payload = {
         "root": ctx["root"],
         "base": ctx["base"],
@@ -581,6 +708,11 @@ def main() -> int:
     if args.only and (args.keep or args.merged):
         print("--only cannot combine with --keep or --merged", file=sys.stderr)
         return 2
+    # An empty --keep would otherwise read as "keep nothing" and select every worktree.
+    for flag, values in (("--keep", args.keep), ("--only", args.only)):
+        if values is not None and not split_names(values):
+            print(f"prune_worktrees: {flag} names no worktree; nothing was done", file=sys.stderr)
+            return 2
     try:
         return args.handler(args)
     except (Stop, Unverified) as exc:

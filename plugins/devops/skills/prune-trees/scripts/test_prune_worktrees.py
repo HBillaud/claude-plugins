@@ -283,8 +283,90 @@ def main() -> int:
         check_blocked(repo, "sm-stash", "submodule-stash", "a stash in a submodule")
         rc, payload, out = repo.run("remove", "--only", "sm-clean")
         report(rc == 0 and not repo.path("sm-clean").exists(), "a clean worktree with a submodule is removed despite git's refusal", out)
+        report(not any("sm-clean" in p for p in payload["stale_registrations"]), "and it is not reported as an earlier session's stale registration", out)
         listed = git(repo.root, "worktree", "list")
         report("sm-clean" not in listed, "and git's bookkeeping is pruned", listed)
+
+        # Submodules that `git submodule status` does not describe, each holding a pushed-everywhere superproject.
+        repo = Repo(base, "submodule-inactive")
+        upstream = repo.base / "sub"
+        git(repo.base, "init", "-q", "-b", "main", str(upstream))
+        git(upstream, "commit", "-q", "--allow-empty", "-m", "s0")
+        git(repo.root, "submodule", "--quiet", "add", str(upstream), "sm")
+        git(repo.root, "commit", "-qm", "add sm")
+        git(repo.root, "push", "-q", "origin", "main")
+        for name, branch_step in (("deinited", "bump"), ("dropped", "rm")):
+            path = repo.plant(name)
+            git(path, "submodule", "--quiet", "update", "--init")
+            git(path / "sm", "commit", "-q", "--allow-empty", "-m", "only copy")
+            if branch_step == "bump":
+                git(path, "add", "sm")
+                git(path, "commit", "-qm", "bump")
+            else:
+                git(path, "rm", "-q", "-f", "sm")
+                git(path, "commit", "-qm", "drop sm")
+            git(path, "push", "-q", "-u", "origin", name)
+        check_blocked(repo, "dropped", "submodule-commits", "a commit in the git directory of a submodule the branch dropped")
+        git(repo.root, "submodule", "--quiet", "deinit", "-f", "sm")
+        check_blocked(repo, "deinited", "submodule-commits", "a commit in a submodule that a deinit in the primary made inactive")
+
+        repo = Repo(base, "submodule-space")
+        upstream = repo.base / "sub"
+        git(repo.base, "init", "-q", "-b", "main", str(upstream))
+        git(upstream, "commit", "-q", "--allow-empty", "-m", "s0")
+        (repo.root / "vendor" / "my").mkdir(parents=True)
+        (repo.root / "vendor" / "my" / "k.txt").write_text("k\n")
+        git(repo.root, "add", ".")
+        git(repo.root, "commit", "-qm", "vendor")
+        git(repo.root, "submodule", "--quiet", "add", str(upstream), "vendor/my lib")
+        git(repo.root, "commit", "-qm", "add sm")
+        git(repo.root, "push", "-q", "origin", "main")
+        for name in ("spaced", "spaced-clean"):
+            git(repo.plant(name), "submodule", "--quiet", "update", "--init")
+        path = repo.path("spaced")
+        git(path / "vendor" / "my lib", "commit", "-q", "--allow-empty", "-m", "only copy")
+        git(path, "add", "vendor/my lib")
+        git(path, "commit", "-qm", "bump")
+        git(path, "push", "-q", "-u", "origin", "spaced")
+        check_blocked(repo, "spaced", "submodule-commits", "a commit in a submodule whose path holds a space")
+        rc, payload, out = repo.run("remove", "--only", "spaced-clean")
+        report(rc == 0 and not repo.path("spaced-clean").exists(), "a clean submodule whose path holds a space does not block", out)
+
+        # Files git hides from status, and ignored files in a tracked directory with a disposable name.
+        repo = Repo(base, "hidden")
+        (repo.root / "build").mkdir()
+        (repo.root / "build" / "config.yaml").write_text("tracked\n")
+        git(repo.root, "add", ".")
+        git(repo.root, "commit", "-qm", "build")
+        for flag, name in (("--skip-worktree", "skipped"), ("--assume-unchanged", "assumed")):
+            path = repo.plant(name)
+            git(path, "update-index", flag, "a.txt")
+            (path / "a.txt").write_text("local edit\n")
+            check_blocked(repo, name, "hidden-changes", f"an edit hidden by {flag}")
+        path = repo.plant("sparse")
+        git(path, "update-index", "--skip-worktree", "a.txt")
+        (path / "a.txt").unlink()
+        _, payload, out = repo.run("audit")
+        report("hidden-changes" not in codes(repo.item(payload, "sparse")), "a skip-worktree file absent from disk does not block", out)
+        (repo.plant("nested-secret") / "build" / ".env.local").write_text("KEY=only-here\n")
+        check_blocked(repo, "nested-secret", "ignored-files", "an ignored file inside a tracked directory named build")
+
+        # A failing lsof is not the same as finding no process.
+        repo = Repo(base, "lsof-fails")
+        repo.plant("unknown")
+        broken = base / "broken-lsof"
+        broken.mkdir()
+        (broken / "lsof").write_text("#!/bin/sh\nexit 1\n")
+        (broken / "lsof").chmod(0o755)
+        _, payload, out = repo.run("audit", path_prefix=str(broken))
+        report("not checked" in " ".join(repo.item(payload, "unknown")["facts"]), "a failing lsof is reported, not read as no processes", out)
+
+        # What the report says about git worktree prune.
+        repo = Repo(base, "prune-output")
+        repo.plant("target")
+        shutil.rmtree(repo.plant("earlier"))
+        rc, payload, out = repo.run("remove", "--only", "target")
+        report(any("earlier" in line for line in payload.get("pruned", [])), "a registration pruned from an earlier session is reported", out)
 
         # Selection.
         repo = Repo(base, "select")
@@ -294,6 +376,9 @@ def main() -> int:
         report(rc == 2 and repo.path("one").exists(), "an unknown name stops everything", out)
         rc, payload, out = repo.run("remove")
         report(rc == 2 and repo.path("one").exists(), "remove with no selection stops everything", out)
+        for flag, value in (("--keep", ""), ("--keep", " , "), ("--only", "")):
+            rc, payload, out = repo.run("remove", flag, value)
+            report(rc == 2 and repo.path("one").exists(), f"{flag} {value!r} stops everything", out)
         rc, payload, out = repo.run("audit")
         report(repo.path("one").exists() and repo.path("two").exists(), "audit removes nothing", out)
         rc, payload, out = repo.run("remove", "--only", "ONE")
@@ -343,6 +428,103 @@ def main() -> int:
         report(not item["blockers"], "a remote branch deleted after its merge does not block", out)
         report(item["merge_state"] == "merged-pr" and item["selected"], "and --merged still selects it", out)
         report("only one" in " ".join(item["facts"]), "and it says the local branch is the only copy", out)
+
+        # A commit that lands between the two passes: this gh stub makes one during the first.
+        repo = Repo(base, "moved")
+        path = repo.plant("racing")
+        repo.commit("racing", "racing")
+        racing = git(path, "rev-parse", "HEAD")
+        stub = base / "committing-gh"
+        stub.mkdir()
+        (stub / "gh").write_text(
+            f"#!/bin/sh\ngit -C '{path}' commit -q --allow-empty -m late\n"
+            f"echo '{json.dumps([{'headRefOid': racing}])}'\n"
+        )
+        (stub / "gh").chmod(0o755)
+        rc, payload, out = repo.run("remove", "--merged", path_prefix=str(stub))
+        report(
+            rc == 1 and path.exists() and "changed" in codes(repo.item(payload, "racing")),
+            "--merged leaves a worktree whose HEAD moved after it was selected",
+            out,
+        )
+
+        # Git settings and history that change what status and the refs show.
+        repo = Repo(base, "untracked-config")
+        git(repo.root, "config", "status.showUntrackedFiles", "no")
+        repo.plant("quiet")
+        (repo.plant("hidden-new") / "new.txt").write_text("new\n")
+        _, payload, out = repo.run("audit")
+        report(not repo.item(payload, "quiet")["blockers"], "status.showUntrackedFiles=no does not block a clean worktree", out)
+        report("dirty" in codes(repo.item(payload, "hidden-new")), "and does not hide an untracked file", out)
+
+        repo = Repo(base, "rename")
+        path = repo.plant("moved")
+        git(path, "mv", "a.txt", "renamed-file.txt")
+        _, payload, out = repo.run("audit")
+        details = [b["detail"] for b in repo.item(payload, "moved")["blockers"] if b["code"] == "dirty"]
+        report(details == ["renamed-file.txt"], "a rename shows its path, not a garbled source", out)
+
+        repo = Repo(base, "reflog")
+        path = repo.plant("left-behind")
+        git(path, "checkout", "-q", "--detach")
+        repo.commit("left-behind", "stranded")
+        git(path, "checkout", "-q", "left-behind")
+        check_blocked(repo, "left-behind", "reflog-only-commits", "a detached commit left behind by a checkout")
+        path = repo.plant("detached-reset")
+        git(path, "checkout", "-q", "--detach")
+        repo.commit("detached-reset", "dropped")
+        git(path, "reset", "-q", "--hard", "HEAD~1")
+        check_blocked(repo, "detached-reset", "reflog-only-commits", "a detached commit dropped by a reset")
+        path = repo.plant("reset-branch")
+        repo.commit("reset-branch", "undone")
+        git(path, "reset", "-q", "--hard", "HEAD~1")
+        path = repo.plant("amended")
+        repo.commit("amended", "first")
+        git(path, "commit", "-q", "--amend", "-m", "second")
+        path = repo.plant("rebased")
+        repo.commit("rebased", "one")
+        repo.commit("rebased", "two")
+        (repo.root / "moved-on.txt").write_text("x\n")
+        git(repo.root, "add", ".")
+        git(repo.root, "commit", "-qm", "main moves")
+        git(path, "rebase", "-q", "main")
+        # A second rebase is what strands the first one's intermediate commit: it is on no branch now.
+        (repo.root / "moved-again.txt").write_text("y\n")
+        git(repo.root, "add", ".")
+        git(repo.root, "commit", "-qm", "main moves again")
+        git(path, "rebase", "-q", "main")
+        _, payload, out = repo.run("audit")
+        report("reflog-only-commits" not in codes(repo.item(payload, "reset-branch")), "a reset on a branch does not block: the branch's reflog survives", out)
+        report("reflog-only-commits" not in codes(repo.item(payload, "amended")), "an amend does not block", out)
+        report(not repo.item(payload, "rebased")["blockers"], "two rebases' intermediate commits do not block", out)
+
+        repo = Repo(base, "submodule-reflog")
+        upstream = repo.base / "sub"
+        git(repo.base, "init", "-q", "-b", "main", str(upstream))
+        git(upstream, "commit", "-q", "--allow-empty", "-m", "s0")
+        git(repo.root, "submodule", "--quiet", "add", str(upstream), "sm")
+        git(repo.root, "commit", "-qm", "add sm")
+        git(repo.root, "push", "-q", "origin", "main")
+        path = repo.plant("sm-moved")
+        git(path, "submodule", "--quiet", "update", "--init")
+        pinned = git(path / "sm", "rev-parse", "HEAD")
+        git(path / "sm", "commit", "-q", "--allow-empty", "-m", "left behind")
+        git(path / "sm", "checkout", "-q", pinned)
+        check_blocked(repo, "sm-moved", "reflog-only-commits", "a submodule commit only its reflog reaches")
+
+        # Exit codes, and refusing to run where locks cannot be seen.
+        repo = Repo(base, "exit-codes")
+        (repo.plant("blocked") / "new.txt").write_text("new\n")
+        rc, payload, out = repo.run("audit")
+        report(rc == 0 and repo.item(payload, "blocked")["blockers"] != [], "audit exits 0 even when it finds blockers", out)
+        stubs = base / "old-git"
+        stubs.mkdir()
+        fake = stubs / "git"
+        real_git = shutil.which("git")
+        fake.write_text(f'#!/bin/sh\nif [ "$1" = "--version" ]; then echo "git version 2.30.2"; exit 0; fi\nexec "{real_git}" "$@"\n')
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        rc, payload, out = repo.run("remove", "--only", "blocked", path_prefix=str(stubs))
+        report(rc == 2 and "2.31" in out and repo.path("blocked").exists(), "a git too old to report locks stops everything", out)
 
         repo = Repo(base, "no-gh")
         repo.plant("squash")

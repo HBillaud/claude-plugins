@@ -43,14 +43,22 @@ request (`#123` or its URL).
 
 - **New task** (the usual case): go on with the naming rules below and step 2.
 - **Existing branch**: plant it instead of branching. If `git worktree list` shows it already checked out
-  somewhere, do not plant: name that path, and offer to enter it with `EnterWorktree(path: ...)`.
+  somewhere, do not plant: name that path, and offer to enter it with `EnterWorktree(path: ...)`. Make the
+  directory a single level, with the branch's slashes turned into dashes (`fix/foo` becomes
+  `.claude/worktrees/fix-foo`), because `/devops:prune-trees` only manages direct children. Run the ignore
+  check from step 3 first.
   ```bash
   git -C <top> worktree add <dir> <branch>
   ```
-  A branch only on the remote needs `git -C <top> fetch origin <branch>:<branch>` first.
+  For a branch only on the remote, fetch it and track it, so that push and pull work without extra arguments:
+  ```bash
+  git -C <top> fetch origin <branch>
+  git -C <top> worktree add --track -b <branch> <dir> origin/<branch>
+  ```
 - **Pull request**: the same, using the head branch from `gh pr view <n> --json headRefName,isCrossRepository`.
-  For a pull request from a fork, fetch `pull/<n>/head:pr-<n>` and plant `pr-<n>`. Say that pushing it back
-  needs the fork's remote.
+  A local copy of that branch can be behind the pull request, so fetch it first and say so if it is.
+  For a pull request from a fork, run `git -C <top> fetch origin pull/<n>/head:pr-<n>` and plant `pr-<n>`. Say
+  that pushing it back needs the fork's remote.
 
 Skip step 2 for an existing branch or pull request. Its base is what it already is.
 
@@ -97,8 +105,10 @@ First make sure the directory is ignored, so worktrees never show up as untracke
 inside it, because `git check-ignore` reports a directory that does not exist yet as not ignored:
 
 ```bash
-git -C <top> check-ignore -q .claude/worktrees/probe ||
-  echo '.claude/worktrees/' >> "<top>/$(git -C <top> rev-parse --git-path info/exclude)"
+git -C <top> check-ignore -q .claude/worktrees/probe || {
+  exclude=$(git -C <top> rev-parse --path-format=absolute --git-path info/exclude)
+  mkdir -p "$(dirname "$exclude")" && echo '.claude/worktrees/' >> "$exclude"
+}
 ```
 
 That edits the local exclude file, not the project's `.gitignore`, so it needs no commit.
@@ -154,7 +164,7 @@ Go through all of these. `EnterWorktree(name:)` may have done some of them, so c
    copied and where from. Prefer regenerating it the project's documented way.
 3. **Dependencies are per-checkout.** If the task will build, test or run the project, install from the
    lockfile with its frozen command (`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`,
-   `uv sync --frozen`, `bundle install`, …) unless `worktree.symlinkDirectories` already links them in. If
+   `uv sync --frozen`, `BUNDLE_FROZEN=true bundle install`, …) unless `worktree.symlinkDirectories` already links them in. If
    the task only reads or edits, skip it. Installing runs the project's install scripts, so report it.
 4. **Other build prerequisites.** If CLAUDE.md or AGENTS.md documents them (toolchain env vars, auth
    tokens), read them before the first build rather than after the first failure.

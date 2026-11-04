@@ -16,6 +16,8 @@ and gets reported. Do not audit by hand, and do not delete anything the script d
 that could not run counts as a failed check, because a failed git command prints nothing, which looks
 exactly like a clean tree.
 
+`<skill-dir>` below is the directory this SKILL.md is in.
+
 ## Scope
 
 Only direct children of `<primary-checkout>/.claude/worktrees/`. The script finds the primary checkout
@@ -48,7 +50,8 @@ git fetch --quiet origin
 python3 <skill-dir>/scripts/prune_worktrees.py audit [--keep ... | --only ... | --merged]
 ```
 
-Exit 2 means nothing can safely be done, such as an unknown name or no repository. Report it and stop.
+`audit` exits 0 whatever it finds, so read its output for blockers. Exit 2 means nothing can safely be done,
+such as an unknown name, no repository, or git older than 2.31. Report it and stop.
 
 ### 3. State the verdict
 
@@ -62,11 +65,14 @@ would clear it:
 
 | Blocker | What it means | What clears it |
 | --- | --- | --- |
-| `dirty` | Uncommitted or untracked files | Commit or discard them |
+| `dirty` | Uncommitted or untracked files. A symlink from `worktree.symlinkDirectories` shows up here when the ignore rule has a trailing slash (`node_modules/`), which does not match a symlink | Commit or discard them. Do not commit such a symlink: deleting the link loses nothing, and dropping the slash from the rule stops it for good |
+| `hidden-changes` | Files flagged skip-worktree or assume-unchanged, whose edits neither `git status` nor `git worktree remove` can see | Save them, or clear the flag with `git update-index --no-skip-worktree` or `--no-assume-unchanged` so the audit can check them |
+| `changed` | The worktree's HEAD moved while this run was removing, so something is working in it | Run the audit again |
 | `ignored-files` | Ignored files, like `.env.local`, found nowhere else | Save them, or see below |
 | `locked` | Claude Code locks a running agent's worktree, so something may be using it. `-p` runs leave their lock until a later session's sweep | Wait for the agent or the sweep. If the user set the lock, `git worktree unlock` is theirs to run |
 | `in-use`, `current-directory` | A process, or this session, is running inside it | Stop it, or leave the worktree first |
 | `orphan-commits` | Detached commits that nothing else contains | Offer to branch them |
+| `reflog-only-commits` | Commits only this worktree's HEAD reflog still reaches, like a detached commit left behind by a checkout. The removal deletes that reflog | Offer to branch them. If the user says they are abandoned, `git -C <worktree> reflog expire --expire=now HEAD` releases them |
 | `submodule-commits`, `submodule-dirty`, `submodule-stash`, `submodule-ignored` | Work in a submodule, whose git directory is deleted with the worktree | Push it, or tell the user it will be lost |
 | `in-progress` | An unfinished merge, rebase or similar | Finish or abort it |
 | `contains-worktree` | Another worktree is nested inside | Deal with the inner one first |
