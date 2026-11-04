@@ -1,6 +1,6 @@
 ---
 name: prune-trees
-description: Safely delete the current project's `.claude/worktrees/` checkouts, keeping only the ones named as arguments — audits each for uncommitted work, dirty submodules, stashes, and unpushed commits before removing anything, never deletes branches, then prunes git's stale bookkeeping and reports reclaimed disk. TRIGGER when the user asks to clean up / prune / remove agent worktrees, says "/worktrees:prune-trees" (or "/prune-trees"), or asks to reclaim the disk that worktrees are holding.
+description: Safely delete the current project's `.claude/worktrees/` checkouts, keeping only the ones named as arguments — audits each for uncommitted work, dirty submodules, stashes, and unpushed commits before removing anything, never deletes branches, then prunes git's stale bookkeeping and reports reclaimed disk. TRIGGER when the user asks to clean up / prune / remove agent worktrees, says "/devops:prune-trees" (or "/prune-trees"), or asks to reclaim the disk that worktrees are holding.
 user-invocable: true
 allowed-tools: Bash, Glob, Grep, Read
 ---

@@ -14,10 +14,7 @@ Then install what you want from it:
 
 ```
 /plugin install session-band@hadrien-labs
-/plugin install worktrees@hadrien-labs
 /plugin install web-agency@hadrien-labs
-/plugin install agent-config@hadrien-labs
-/plugin install design-studio@hadrien-labs
 /plugin install devops@hadrien-labs
 ```
 
@@ -32,11 +29,8 @@ To pick up new versions: `/plugin marketplace update hadrien-labs`.
 | Plugin | Kind | What it does |
 | --- | --- | --- |
 | [session-band](plugins/session-band) | mod | One band above the prompt: what the session works on, where, how much of the session limit is used, and a replay of the last turn's edits. Adds `/worktree` and `/replay`. The task label can use Claude Haiku, local parsing with no model call, or be turned off. |
-| [worktrees](plugins/worktrees) | skills | `/worktrees:plant-tree` gives a task its own git worktree under `.claude/worktrees/`; `/worktrees:prune-trees` safely deletes the ones you no longer need. |
-| [web-agency](plugins/web-agency) | skills | `/web-agency:audit-dns` audits live DNS records, registrar/host dashboard screenshots, and project codebases for routing issues, split-DNS traps, email deliverability (`MX`, `SPF`, `DKIM`, `DMARC`), and transactional mailers. |
-| [agent-config](plugins/agent-config) | skills | `/agent-config:canonical-agent-config` audits or migrates a repository's agent config (CLAUDE.md, AGENTS.md, skills, subagents, rules) to one canonical source with thin per-agent adapters, an inventory, agent probes and a CI guard. |
-| [design-studio](plugins/design-studio) | skills | `/design-studio:redesign-section` takes a section from mockups (desktop and 375px artboards, motion notes) through a contract to a verified build on its own branch; `/design-studio:check-responsive` probes a page at every breakpoint with reduced motion on and off; `/design-studio:audit-type-scale` measures type roles across routes and aligns them to a reference page; `/design-studio:prep-hero-media` transcodes and wires hero video and images poster-first. |
-| [devops](plugins/devops) | skills | `/devops:resolve-issue` takes a tracked issue from report to verified fix: evidence from the real failure, a reproduction, a root cause proved before any code changes, the suggested fix tested against what the code must guarantee, and a regression test shown to fail when the bug is put back. |
+| [web-agency](plugins/web-agency) | skills | `/web-agency:audit-dns` audits live DNS records, registrar/host dashboard screenshots, and project codebases for routing issues, split-DNS traps, email deliverability (`MX`, `SPF`, `DKIM`, `DMARC`), and transactional mailers; `/web-agency:redesign-section` takes a section from mockups (desktop and 375px artboards, motion notes) through a contract to a verified build on its own branch; `/web-agency:check-responsive` probes a page at every breakpoint with reduced motion on and off; `/web-agency:audit-type-scale` measures type roles across routes and aligns them to a reference page; `/web-agency:prep-hero-media` transcodes and wires hero video and images poster-first. |
+| [devops](plugins/devops) | skills | `/devops:resolve-issue` takes a tracked issue from report to verified fix: evidence from the real failure, a reproduction, a root cause proved before any code changes, the suggested fix tested against what the code must guarantee, and a regression test shown to fail when the bug is put back; `/devops:plant-tree` gives a task its own git worktree under `.claude/worktrees/`; `/devops:prune-trees` safely deletes the ones you no longer need; `/devops:canonical-agent-config` audits or migrates a repository's agent config (CLAUDE.md, AGENTS.md, skills, subagents, rules) to one canonical source with thin per-agent adapters, an inventory, agent probes and a CI guard. |
 
 ## Developing
 

@@ -22,7 +22,7 @@ Change no product code until the gate in step 5 passes. Experiments before then 
 
 ## 2. Isolate the work
 
-Work on a new branch from the up-to-date remote default branch, in its own worktree when the repository or the session has others active (`/worktrees:plant-tree` does this if installed). Follow the repository's naming rule. Note which version the report was made against, since the default branch may have moved on.
+Work on a new branch from the up-to-date remote default branch, in its own worktree when the repository or the session has others active (`/devops:plant-tree` does this). Follow the repository's naming rule. Note which version the report was made against, since the default branch may have moved on.
 
 ## 3. Collect evidence from the real failure
 

@@ -1,6 +1,6 @@
 ---
 name: plant-tree
-description: Create an isolated git worktree for the current task under the invoking project's `.claude/worktrees/`, on a fresh branch named to the repo's conventions, then finish the bootstrap `git worktree add` skips (submodules, untracked local config) and switch the session into it. TRIGGER when the user asks to work in / start / spin up a worktree, says "/worktrees:plant-tree" (or "/plant-tree"), or wants a task isolated from the primary checkout.
+description: Create an isolated git worktree for the current task under the invoking project's `.claude/worktrees/`, on a fresh branch named to the repo's conventions, then finish the bootstrap `git worktree add` skips (submodules, untracked local config) and switch the session into it. TRIGGER when the user asks to work in / start / spin up a worktree, says "/devops:plant-tree" (or "/plant-tree"), or wants a task isolated from the primary checkout.
 user-invocable: true
 allowed-tools: Bash, Glob, Grep, Read, EnterWorktree
 ---
@@ -11,7 +11,7 @@ Give the current task its own checkout under `<repo-top-level>/.claude/worktrees
 primary checkout stays on its own branch and its own build state. The worktree is throwaway; the
 branch it carries is not.
 
-The counterpart is `/worktrees:prune-trees`, which deletes these later. Everything here is written so that
+The counterpart is `/devops:prune-trees`, which deletes these later. Everything here is written so that
 audit can succeed: one worktree per task, inside the conventional directory, on a real branch.
 
 ## Scope
@@ -20,7 +20,7 @@ audit can succeed: one worktree per task, inside the conventional directory, on 
 `git rev-parse --show-toplevel` from the invoking directory — never a sibling checkout
 (`../<repo>-<topic>`), never `/tmp`, never a path relative to wherever the session happens to be
 `cd`'d. If the user explicitly names a location outside that directory, use it, but say plainly
-that `/worktrees:prune-trees` will not manage it.
+that `/devops:prune-trees` will not manage it.
 
 If the invoking directory is not a git repository, stop and say so.
 
@@ -139,6 +139,6 @@ submodule populated.
   `.gitignore`. Check with `git check-ignore -v .claude/worktrees` and, if it is *not* ignored, add
   it to `.git/info/exclude` (a local concern, not a commit to the project's `.gitignore`).
 - Worktrees are cheap to create and expensive to keep — each one grows a full build tree. When the
-  work is merged or abandoned, hand cleanup to `/worktrees:prune-trees`; removing the checkout leaves the
+  work is merged or abandoned, hand cleanup to `/devops:prune-trees`; removing the checkout leaves the
   branch intact.
 - Never `rm -rf` a worktree here. Creating is this skill's job; deleting is audited elsewhere.
