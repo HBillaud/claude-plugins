@@ -15,6 +15,17 @@ const SUMMARY_TIMEOUT_MS = 15_000
 // The head of a long paste says what it is for; the rest only costs tokens.
 const MESSAGE_CHARS = 4_000
 const HINT_CHARS = 72
+// The longest reply taken as a label; the system prompt asks for under this.
+const LABEL_CHARS = 60
+// The model often names what it is answering with: the label after it is still good.
+const LABEL_PREFIX = /^(?:(?:current|new)\s+)?label\s*:[\s*_]*/i
+// A reply that comments on the conversation instead of naming the work: it opens
+// on a determiner, which a verb-led label never does, on who is asking or on the
+// current label, or it makes the people or text involved the subject of a sentence
+// ("the message only adds"). The noun alone is no sign: "Fix the message queue" is
+// a fine label, and "Label" and "Message" are verbs, so neither is matched at the start.
+const COMMENTARY =
+  /^an?\s|^(?:the|this|that|these|those|developer|user|person|current\s+label)\b|\b(?:the|this|that|current|latest|new|previous)\s+(?:developer|user|person|message|label|request)(?:'s)?\s+(?:is|are|was|were|has|asks?|asking|wants?|needs?|says?|seems?|only|just)\b/i
 // A session first seen mid-conversation (a reload, a resume) is summed up from
 // its last few prompts, so a closing "yes, go ahead" still has its task.
 const SEED_PROMPTS = 3
@@ -33,6 +44,7 @@ const SYSTEM = [
   'Reply with the new label alone: a verb-led phrase of at most eight words and under 60 characters, in sentence case, with no trailing period, quotes, markdown or emoji.',
   'Name the concrete subject the messages give: the feature, component, file, pull request or issue number.',
   'When the latest message only approves, confirms, answers a question or nudges the work under way ("yes", "go ahead", "looks good", "the second option"), reply with the current label, narrowed only if the message narrows the work.',
+  'Never describe or assess the messages, the developer or the label, and never put a prefix before the phrase.',
 ].join(' ')
 
 // How the label is written, the `taskLabel` option: by the model, read from the
@@ -87,16 +99,19 @@ export const localLabel = (current: string | null, message: string): string | nu
 const NOT_TYPED = ['<local-command-', '<task-notification', '<bash-', 'Base directory for this skill:', 'Caveat:', '[Request interrupted']
 const REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g
 
+const wholeLine = (text: string): string => text.split('\n').find(l => l.trim() !== '')?.trim() ?? ''
+
 const firstLine = (text: string): string => {
-  const line = text.split('\n').find(l => l.trim() !== '')?.trim() ?? ''
+  const line = wholeLine(text)
   return line.length > HINT_CHARS ? `${line.slice(0, HINT_CHARS - 1)}…` : line
 }
 
+// The model's reply as a label, or null where it is not one, so what is up stays up.
 const cleaned = (reply: string): string | null => {
-  const line = firstLine(reply)
+  const line = wholeLine(reply)
     .replace(/^[\s"'`*_]+|[\s"'`*_.]+$/g, '')
-    .slice(0, HINT_CHARS)
-  return line === '' ? null : line
+    .replace(LABEL_PREFIX, '')
+  return line === '' || line.length > LABEL_CHARS || COMMENTARY.test(line) ? null : line
 }
 
 // A built-in command (`/model opus`, `/clear`) is housekeeping, not a task; a
@@ -153,8 +168,8 @@ async function summarize($: EngineInterface, messages: readonly string[]): Promi
     if (id !== latest) return
     const text = reply.isAnswered ? cleaned(reply.text) : null
     if (text === null) {
-      // The first line stays up in place of a summary that did not come.
-      $.ui.log(`session-band: no task summary (${reply.isAnswered ? 'empty label' : reply.reason})`, { to: 'debug' })
+      // What is up, the last label or the first line, stays in place of a summary that did not come.
+      $.ui.log(`session-band: no task summary (${reply.isAnswered ? 'not a label' : reply.reason})`, { to: 'debug' })
       return
     }
     await update($, hint, () => ({ text, isProvisional: false }))

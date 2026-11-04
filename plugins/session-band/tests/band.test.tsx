@@ -32,7 +32,7 @@ test('keeps each row to one line on every surface, and sizes it in cells on the 
   // A graphical surface wraps a row Box it is not told to keep to one line, so
   // a task too long to sit beside its label would drop onto a line of its own.
   const w = engine(on, { root: '/acme', repoRoot: '/acme', branch: 'fix/login-timeout', sha: 'abc1234', changed: 2, ahead: 1, rateLimits: [fiveHour(42, 133 * MINUTE)] })
-  w.replies.push([/flaky/, answered('Stabilize the flaky replay test that times out on slow CI runners')])
+  w.replies.push([/flaky/, answered('Stabilize the flaky replay test on slow CI runners')])
   await $.session.start({ cwd: w.root, surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'the replay test is flaky on slow CI runners', wait: false, origin: COMPOSER })
   await w.clock.settle()
