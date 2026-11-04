@@ -161,6 +161,104 @@ test('keeps the first line up when the model gives no label', async ($, on) => {
   await ui.unmount()
 })
 
+// A reply that is not a label leaves what is up in place.
+
+const SIXTY = 'Add retries to the gateway uploads and the storage downloads'
+
+const NOT_LABELS = [
+  'The developer is asking a diagnostic question about a session-band bug',
+  'The current label is truncated and vague, and the new message only adds a nudge',
+  'The developer is asking about the band',
+  'This message only confirms the work',
+  'Developer wants the band fixed',
+  'Keep it, the message only confirms the work',
+  'Unclear what the user is asking for',
+  `${SIXTY}s`,
+  `Current label: ${SIXTY}s`,
+  // Haiku's own replies, at the effort the row asks for.
+  'The developer only attached evidence and said nothing new about the work, so the label stays as it is.',
+  "Current label is still accurate; the latest message only presents evidence",
+  'Current label kept: the developer is asking a diagnostic question',
+  'Current label applies; the message only presents evidence',
+  'Current label: the message only supplies evidence for the existing work',
+  'Current label: The developer is asking about the band',
+  'Label: a question about a session-band fix',
+  'Developer shares proof of a session-band bug',
+  'Investigating why session-band fix isn\'t reflected in consumer after reload',
+]
+
+for (const reply of NOT_LABELS) {
+  test(`keeps the last label when the model replies: ${reply}`, async ($, on) => {
+    const w = engine(on)
+    w.replies.push([/gateway/, answered('Add retries to gateway uploads')], [/go ahead/, answered(reply)])
+    await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'add retries to the gateway uploads', wait: false, origin: COMPOSER })
+    await w.clock.settle()
+    await $.prompt.submit({ text: 'yes, go ahead', wait: false, origin: COMPOSER })
+    await w.clock.settle()
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+    expect(await rowTexts(ui, 'task')).toEqual([HINT_GLYPH, 'task', 'Add retries to gateway uploads'])
+    await ui.unmount()
+  })
+}
+
+test('keeps the first line up, dim, when the first reply is not a label', async ($, on) => {
+  const w = engine(on)
+  w.replies.push([/rate/, answered('The developer is asking about the rate limiter')])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'check the rate limiter', wait: false, origin: COMPOSER })
+  await w.clock.settle()
+
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  expect(await rowTexts(ui, 'task')).toEqual([HINT_GLYPH, 'task', 'check the rate limiter'])
+  expect(textNode(nodeOf(await ui.drawn(), 'task'), 'check the rate limiter')?.props?.['dimColor']).toBe(true)
+  await ui.unmount()
+})
+
+for (const [reply, label] of [
+  ['Label: Diagnose session-band fix not applying in VSCode', 'Diagnose session-band fix not applying in VSCode'],
+  ['Current label: Diagnose session-band wrapping on VS Code', 'Diagnose session-band wrapping on VS Code'],
+  ['**New label:** Add retries to gateway uploads', 'Add retries to gateway uploads'],
+  [`Current label: ${SIXTY}`, SIXTY],
+] as const) {
+  test(`takes the label after a prefix: ${reply}`, async ($, on) => {
+    const w = engine(on)
+    w.replies.push([/work/, answered(reply)])
+    await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'the work', wait: false, origin: COMPOSER })
+    await w.clock.settle()
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+    expect(await rowTexts(ui, 'task')).toEqual([HINT_GLYPH, 'task', label])
+    await ui.unmount()
+  })
+}
+
+for (const label of [SIXTY, 'Fix the message queue retries', 'Update the developer docs', 'Fix the user profile page', 'Trim the task label', 'Label issues by severity', 'Message the team about the outage', 'A/B test the checkout flow']) {
+  test(`takes a label that only mentions those words: ${label}`, async ($, on) => {
+    const w = engine(on)
+    w.replies.push([/work/, answered(label)])
+    await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'the work', wait: false, origin: COMPOSER })
+    await w.clock.settle()
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+    expect(await rowTexts(ui, 'task')).toEqual([HINT_GLYPH, 'task', label])
+    await ui.unmount()
+  })
+}
+
+test('tells the model never to comment on the messages or the label', async ($, on) => {
+  const w = engine(on)
+  w.replies.push([/docs/, answered('Update the docs')])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'update the docs', wait: false, origin: COMPOSER })
+  await w.clock.settle()
+
+  expect(w.system).toContain('Never describe or assess the messages, the developer or the label')
+})
+
 // The bubble is a Nerd Font symbol: where nothing would draw it, a diamond stands in.
 
 const DIAMOND_GLYPH = '◆'

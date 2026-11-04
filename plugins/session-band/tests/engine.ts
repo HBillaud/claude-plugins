@@ -39,6 +39,8 @@ export type World = {
   // The task row's model and transcript.
   /** Each completion's prompt, in the order asked. */
   asked: string[]
+  /** The system prompt of the latest completion. */
+  system: string | undefined
   /** The label the model answers each prompt with, by a word the prompt holds; or how it fails, and after how long. */
   replies: Array<[RegExp, ModelCompleteResult, number?]>
   transcript: SessionMessage[]
@@ -73,7 +75,7 @@ export type World = {
   refused: Partial<Record<'session.usage' | 'command.register', string>>
 }
 
-export type Given = Partial<Omit<World, 'clock' | 'asked' | 'gitCalls'>> & { env?: Record<string, string> }
+export type Given = Partial<Omit<World, 'clock' | 'asked' | 'system' | 'gitCalls'>> & { env?: Record<string, string> }
 
 const REV_PARSE = 'git rev-parse --path-format=absolute --show-toplevel --git-dir --git-common-dir'
 export const STATUS = 'git --no-optional-locks status --porcelain=v2 --branch'
@@ -108,6 +110,7 @@ export const engine = (on: On, given: Given = {}): World => {
   const w: World = {
     clock: mock.clock(on, { now: NOW }),
     asked: [],
+    system: undefined,
     replies: [],
     transcript: [],
     top: root,
@@ -134,6 +137,7 @@ export const engine = (on: On, given: Given = {}): World => {
 
   on('model.complete', async ($, e) => {
     w.asked.push(e.prompt)
+    w.system = e.system
     const match = w.replies.find(([word]) => word.test(e.prompt.split('<message>').at(-1) ?? ''))
     if (match === undefined) return { value: answered('Unexpected prompt') }
     if (match[2] !== undefined) await w.clock.sleep(match[2])
